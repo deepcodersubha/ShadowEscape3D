@@ -60,8 +60,10 @@ class PlayerStats {
         currentCeruleanFlasks = maxCeruleanFlasks
     }
 
-    // Stamina Regeneration controls
-    private val staminaRegenRate: Float = 40f // Points per second
+    // Dynamic Stamina Regeneration Rate scaling with ENDURANCE & AGILITY
+    val staminaRegenRate: Float
+        get() = (35.0f + (endurance - 10) * 2.5f + (agility - 10) * 1.0f).coerceAtLeast(15f)
+
     private val manaRegenRate: Float = 4f    // Points per second
     private var staminaRegenDelay: Float = 0f
 
@@ -97,7 +99,7 @@ class PlayerStats {
     fun useStamina(amount: Float): Boolean {
         if (currentStamina >= amount) {
             currentStamina -= amount
-            staminaRegenDelay = 0.6f // Short delay before stamina starts regenerating
+            staminaRegenDelay = 0.35f // Responsive short delay before stamina refilling begins
             return true
         }
         return false

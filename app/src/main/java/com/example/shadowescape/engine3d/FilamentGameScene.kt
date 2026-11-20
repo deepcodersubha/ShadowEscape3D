@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.Matrix
 import android.view.Choreographer
 import android.view.SurfaceView
+import com.google.android.filament.Box
 import com.google.android.filament.EntityManager
 import com.google.android.filament.LightManager
 import com.google.android.filament.Skybox
@@ -136,6 +137,14 @@ class FilamentGameScene(
             val asset = assetLoader.createAsset(buffer)
             if (asset != null) {
                 resourceLoader.loadResources(asset)
+                val rm = modelViewer.engine.renderableManager
+                for (entity in asset.entities) {
+                    val inst = rm.getInstance(entity)
+                    if (inst != 0) {
+                        rm.setAxisAlignedBoundingBox(inst, Box(0f, 0f, 0f, 50f, 50f, 50f))
+                        rm.setCulling(inst, false)
+                    }
+                }
                 modelViewer.scene.addEntities(asset.entities)
             }
             asset
@@ -203,6 +212,10 @@ class FilamentGameScene(
             stats.drinkCrimsonFlask()
             overlay.currentHp = stats.currentHp
         }
+
+        overlay.onSheathToggle = {
+            overlay.isWeaponSheathed = !overlay.isWeaponSheathed
+        }
     }
 
     private fun checkHit(dmg: Float, isHeavy: Boolean) {
@@ -264,12 +277,16 @@ class FilamentGameScene(
         }
         lastFrameTimeNanos = frameTimeNanos
 
-        // 1. Update Stamina Recovery
+        // 1. Update Stamina Recovery according to Player Stats & Endurance
         stats.update(dt)
         overlay.currentStamina = stats.currentStamina
         overlay.maxStamina = stats.maxStamina
         overlay.currentHp = stats.currentHp
         overlay.maxHp = stats.maxHp
+        overlay.endurance = stats.endurance
+        overlay.agility = stats.agility
+        overlay.staminaRegenRate = stats.staminaRegenRate
+        overlay.postInvalidate() // Ensures continuous 60fps re-draw of refilling green stamina bar
 
         // 2. Handle Locomotion & Physics
         if (isRolling) {
@@ -282,6 +299,7 @@ class FilamentGameScene(
             attackTimer += dt
             if (attackTimer >= attackDuration) {
                 isAttacking = false
+                overlay.isWeaponSheathed = true
             }
         } else {
             // Player directional movement via virtual joystick

@@ -39,10 +39,13 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
     var isSprinting: Boolean = false
 
     // HUD Data
-    var currentHp: Float = 550f
-    var maxHp: Float = 600f
-    var currentStamina: Float = 140f
-    var maxStamina: Float = 140f
+    var currentHp: Float = 100f
+    var maxHp: Float = 100f
+    var currentStamina: Float = 80f
+    var maxStamina: Float = 80f
+    var endurance: Int = 10
+    var agility: Int = 10
+    var staminaRegenRate: Float = 35f
     var equippedWeapon: Weapon? = null
     var isWeaponSheathed: Boolean = true
     var isTargetLocked: Boolean = false
@@ -331,32 +334,60 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         var curY = 24f * density
 
         // HP Bar
-        val barW = 260f * density
-        val barH = 14f * density
-        hudPaint.color = Color.parseColor("#551E293B")
-        canvas.drawRoundRect(startX, curY, startX + barW, curY + barH, 4f, 4f, hudPaint)
-        val hpRatio = (currentHp / maxHp).coerceIn(0f, 1f)
-        hudPaint.color = Color.parseColor("#DC2626")
-        canvas.drawRoundRect(startX, curY, startX + barW * hpRatio, curY + barH, 4f, 4f, hudPaint)
-        borderPaint.color = Color.parseColor("#99EF4444")
-        borderPaint.strokeWidth = 1.5f
-        canvas.drawRoundRect(startX, curY, startX + barW, curY + barH, 4f, 4f, borderPaint)
+        val barW = 280f * density
+        val hpBarH = 18f * density
+        hudPaint.color = Color.parseColor("#770F172A")
+        hudPaint.style = Paint.Style.FILL
+        canvas.drawRoundRect(startX, curY, startX + barW, curY + hpBarH, 5f, 5f, hudPaint)
 
-        // Stamina Bar
-        curY += barH + 6f * density
-        val stamW = barW * 0.78f
-        val stamH = 10f * density
-        hudPaint.color = Color.parseColor("#551E293B")
-        canvas.drawRoundRect(startX, curY, startX + stamW, curY + stamH, 4f, 4f, hudPaint)
+        val hpRatio = (currentHp / maxHp).coerceIn(0f, 1f)
+        if (hpRatio > 0f) {
+            hudPaint.color = Color.parseColor("#DC2626")
+            canvas.drawRoundRect(startX, curY, startX + barW * hpRatio, curY + hpBarH, 5f, 5f, hudPaint)
+        }
+        borderPaint.color = Color.parseColor("#99EF4444")
+        borderPaint.strokeWidth = 2f
+        canvas.drawRoundRect(startX, curY, startX + barW, curY + hpBarH, 5f, 5f, borderPaint)
+
+        // HP Numerical Text (Centered in bar)
+        val barTextSize = 11f * density
+        labelPaint.textSize = barTextSize
+        labelPaint.color = Color.WHITE
+        val hpText = "HP  ${currentHp.toInt()} / ${maxHp.toInt()}"
+        val hpBaseline = curY + hpBarH / 2f - (labelPaint.fontMetrics.ascent + labelPaint.fontMetrics.descent) / 2f
+        canvas.drawText(hpText, startX + barW / 2f, hpBaseline, labelPaint)
+
+        // Stamina Bar (Green Bar)
+        curY += hpBarH + 7f * density
+        val stamW = barW * 0.82f
+        val stamBarH = 15f * density
+        hudPaint.color = Color.parseColor("#770F172A")
+        canvas.drawRoundRect(startX, curY, startX + stamW, curY + stamBarH, 4f, 4f, hudPaint)
+
         val stamRatio = (currentStamina / maxStamina).coerceIn(0f, 1f)
-        hudPaint.color = Color.parseColor("#16A34A")
-        canvas.drawRoundRect(startX, curY, startX + stamW * stamRatio, curY + stamH, 4f, 4f, hudPaint)
+        if (stamRatio > 0f) {
+            hudPaint.color = Color.parseColor("#16A34A")
+            canvas.drawRoundRect(startX, curY, startX + stamW * stamRatio, curY + stamBarH, 4f, 4f, hudPaint)
+        }
         borderPaint.color = Color.parseColor("#9922C55E")
-        canvas.drawRoundRect(startX, curY, startX + stamW, curY + stamH, 4f, 4f, borderPaint)
+        borderPaint.strokeWidth = 2f
+        canvas.drawRoundRect(startX, curY, startX + stamW, curY + stamBarH, 4f, 4f, borderPaint)
+
+        // Stamina Numerical Text (Centered in bar)
+        val stamText = "STAMINA  ${currentStamina.toInt()} / ${maxStamina.toInt()}"
+        val stamBaseline = curY + stamBarH / 2f - (labelPaint.fontMetrics.ascent + labelPaint.fontMetrics.descent) / 2f
+        canvas.drawText(stamText, startX + stamW / 2f, stamBaseline, labelPaint)
+
+        // Dynamic Stamina Regen Rate readout
+        curY += stamBarH + 16f * density
+        hudTextPaint.textSize = 12f * density
+        hudTextPaint.color = Color.parseColor("#34D399")
+        val regenText = "⚡ REGEN: +${staminaRegenRate.toInt()}/s (END $endurance • AGI $agility)"
+        canvas.drawText(regenText, startX, curY, hudTextPaint)
 
         // Weapon Stance & Stat Info
         equippedWeapon?.let { wpn ->
-            curY += stamH + 16f * density
+            curY += 16f * density
             val stanceText = if (wpn.isTwoHanded) "⚔️ 2-HANDED" else "🗡️ 1-HANDED"
             hudTextPaint.textSize = 12f * density
             hudTextPaint.color = Color.parseColor("#FDE047")
