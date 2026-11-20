@@ -6,12 +6,14 @@ import android.view.Choreographer
 import android.view.SurfaceView
 import com.google.android.filament.Box
 import com.google.android.filament.EntityManager
+import com.google.android.filament.IndirectLight
 import com.google.android.filament.LightManager
 import com.google.android.filament.Skybox
 import com.google.android.filament.gltfio.AssetLoader
 import com.google.android.filament.gltfio.FilamentAsset
 import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
+import com.google.android.filament.utils.Manipulator
 import com.google.android.filament.utils.ModelViewer
 import com.example.shadowescape.model.PlayerStats
 import com.example.shadowescape.model.Weapon
@@ -35,7 +37,12 @@ class FilamentGameScene(
     val overlay: DualZoneTouchOverlay
 ) : Choreographer.FrameCallback {
 
-    val modelViewer: ModelViewer = ModelViewer(surfaceView)
+    val manipulator: Manipulator = Manipulator.Builder()
+        .targetPosition(0f, 1.25f, 0f)
+        .orbitHomePosition(0f, 2.8f, 4.2f)
+        .build(Manipulator.Mode.ORBIT)
+
+    val modelViewer: ModelViewer = ModelViewer(surfaceView = surfaceView, manipulator = manipulator)
     val camera3D: ThirdPersonOrbitCamera = ThirdPersonOrbitCamera()
 
     // glTF Asset Loading System
@@ -78,6 +85,7 @@ class FilamentGameScene(
 
     private var sunlightEntity: Int = 0
     private var torchEntity: Int = 0
+    private var indirectLight: IndirectLight? = null
 
     init {
         overlay.camera = camera3D
@@ -91,7 +99,7 @@ class FilamentGameScene(
 
     private fun setupSkybox() {
         val skybox = Skybox.Builder()
-            .color(0.04f, 0.06f, 0.10f, 1.0f)
+            .color(0.14f, 0.18f, 0.26f, 1.0f) // Twilight atmospheric dusk
             .build(modelViewer.engine)
         modelViewer.scene.skybox = skybox
     }
@@ -103,9 +111,9 @@ class FilamentGameScene(
         // 1. Directional Sunlight (Dark Fantasy Amber Sun with Cast Shadows)
         sunlightEntity = EntityManager.get().create()
         LightManager.Builder(LightManager.Type.DIRECTIONAL)
-            .color(0.98f, 0.92f, 0.82f)
-            .intensity(110_000f)
-            .direction(-0.6f, -1.2f, -0.8f)
+            .color(1.0f, 0.94f, 0.85f)
+            .intensity(130_000f)
+            .direction(0.4f, -1.2f, -0.6f)
             .castShadows(true)
             .build(engine, sunlightEntity)
         scene.addEntity(sunlightEntity)
@@ -113,12 +121,31 @@ class FilamentGameScene(
         // 2. Point Light Torch (Atmospheric Warm Orange Glow near Arena center)
         torchEntity = EntityManager.get().create()
         LightManager.Builder(LightManager.Type.POINT)
-            .color(1.0f, 0.55f, 0.15f)
-            .intensity(280_000f)
-            .position(0f, 2.2f, 0f)
-            .falloff(14f)
+            .color(1.0f, 0.65f, 0.22f)
+            .intensity(320_000f)
+            .position(0f, 2.5f, 0f)
+            .falloff(22f)
             .build(engine, torchEntity)
         scene.addEntity(torchEntity)
+
+        // 3. Ambient Indirect Light (Spherical Harmonics Irradiance)
+        // Illuminates all faces of ground and models with soft ambient light
+        val sh = floatArrayOf(
+            0.75f, 0.75f, 0.82f,
+            0.12f, 0.12f, 0.16f,
+            0.18f, 0.18f, 0.22f,
+            0.08f, 0.08f, 0.12f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f
+        )
+        indirectLight = IndirectLight.Builder()
+            .irradiance(3, sh)
+            .intensity(50_000f)
+            .build(engine)
+        scene.indirectLight = indirectLight
     }
 
     private fun load3DAssets() {
@@ -264,6 +291,11 @@ class FilamentGameScene(
         if (torchEntity != 0) {
             scene.removeEntity(torchEntity)
             engine.destroyEntity(torchEntity)
+        }
+        indirectLight?.let {
+            scene.indirectLight = null
+            engine.destroyIndirectLight(it)
+            indirectLight = null
         }
     }
 
