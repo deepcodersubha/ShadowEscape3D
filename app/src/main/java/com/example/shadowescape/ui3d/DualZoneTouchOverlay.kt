@@ -73,11 +73,19 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
 
     private var rollTouchStartTime: Long = 0L
 
-    // Paints
+    // Dedicated Paints to avoid state leakage
     private val hudPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         color = Color.WHITE
+    }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        color = Color.parseColor("#E2E8F0")
+    }
+    private val hudTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.LEFT
+        color = Color.parseColor("#FDE047")
     }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -302,12 +310,19 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         borderPaint.strokeWidth = 2.5f
         canvas.drawRoundRect(rect, rect.width() / 2f, rect.height() / 2f, borderPaint)
 
-        textPaint.textSize = rect.width() * 0.38f
-        canvas.drawText(icon, rect.centerX(), rect.centerY() - 2f, textPaint)
+        // Mathematically centered Emoji Icon
+        val iconSize = rect.width() * 0.35f
+        iconPaint.textSize = iconSize
+        val iconCenterY = rect.centerY() - rect.height() * 0.10f
+        val iconBaseline = iconCenterY - (iconPaint.fontMetrics.ascent + iconPaint.fontMetrics.descent) / 2f
+        canvas.drawText(icon, rect.centerX(), iconBaseline, iconPaint)
 
-        textPaint.textSize = 10f * resources.displayMetrics.density
-        textPaint.color = Color.parseColor("#E2E8F0")
-        canvas.drawText(label, rect.centerX(), rect.centerY() + rect.height() * 0.34f, textPaint)
+        // Mathematically centered Text Label
+        val labelSize = (9.5f * resources.displayMetrics.density).coerceAtMost(rect.width() * 0.20f)
+        labelPaint.textSize = labelSize
+        val labelCenterY = rect.centerY() + rect.height() * 0.28f
+        val labelBaseline = labelCenterY - (labelPaint.fontMetrics.ascent + labelPaint.fontMetrics.descent) / 2f
+        canvas.drawText(label, rect.centerX(), labelBaseline, labelPaint)
     }
 
     private fun drawSoulslikeHUD(canvas: Canvas) {
@@ -343,10 +358,9 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         equippedWeapon?.let { wpn ->
             curY += stamH + 16f * density
             val stanceText = if (wpn.isTwoHanded) "⚔️ 2-HANDED" else "🗡️ 1-HANDED"
-            textPaint.textSize = 12f * density
-            textPaint.textAlign = Paint.Align.LEFT
-            textPaint.color = Color.parseColor("#FDE047")
-            canvas.drawText("${wpn.name}  [$stanceText]", startX, curY, textPaint)
+            hudTextPaint.textSize = 12f * density
+            hudTextPaint.color = Color.parseColor("#FDE047")
+            canvas.drawText("${wpn.name}  [$stanceText]", startX, curY, hudTextPaint)
         }
     }
 }

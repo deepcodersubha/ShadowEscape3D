@@ -1,13 +1,16 @@
 package com.example.shadowescape.engine3d
 
 import android.content.Context
+import android.opengl.Matrix
 import android.view.Choreographer
 import android.view.SurfaceView
-import com.google.android.filament.Colors
 import com.google.android.filament.EntityManager
 import com.google.android.filament.LightManager
 import com.google.android.filament.Skybox
-import com.google.android.filament.View
+import com.google.android.filament.gltfio.AssetLoader
+import com.google.android.filament.gltfio.FilamentAsset
+import com.google.android.filament.gltfio.ResourceLoader
+import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.ModelViewer
 import com.example.shadowescape.model.PlayerStats
 import com.example.shadowescape.model.Weapon
@@ -22,7 +25,8 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Core 3D Scene Controller driving Google Filament PBR rendering and Soulslike gameplay loop.
+ * Core 3D Scene Controller driving Google Filament PBR rendering, 3D glTF modular actors,
+ * and Soulslike gameplay loop.
  */
 class FilamentGameScene(
     private val context: Context,
@@ -33,10 +37,22 @@ class FilamentGameScene(
     val modelViewer: ModelViewer = ModelViewer(surfaceView)
     val camera3D: ThirdPersonOrbitCamera = ThirdPersonOrbitCamera()
 
+    // glTF Asset Loading System
+    private val materialProvider = UbershaderProvider(modelViewer.engine)
+    private val assetLoader = AssetLoader(modelViewer.engine, materialProvider, EntityManager.get())
+    private val resourceLoader = ResourceLoader(modelViewer.engine)
+
+    private var arenaAsset: FilamentAsset? = null
+    private var playerAsset: FilamentAsset? = null
+    private var weaponAsset: FilamentAsset? = null
+
     // 3D Player State
     val playerPosition: Vector3 = Vector3(0f, 0f, 0f)
     var playerYawDeg: Float = 0f
     val playerCapsule: Capsule3D = Capsule3D(playerPosition, radius = 0.45f, height = 1.8f)
+
+    private val playerTransform = FloatArray(16)
+    private val weaponTransform = FloatArray(16)
 
     // Combat & RPG Stats
     val stats: PlayerStats = PlayerStats()
@@ -69,10 +85,10 @@ class FilamentGameScene(
         setupLighting()
         setupSkybox()
         wireOverlayCallbacks()
+        load3DAssets()
     }
 
     private fun setupSkybox() {
-        // Dark fantasy abyss skybox (deep slate indigo with soft atmospheric tone)
         val skybox = Skybox.Builder()
             .color(0.04f, 0.06f, 0.10f, 1.0f)
             .build(modelViewer.engine)
@@ -87,7 +103,7 @@ class FilamentGameScene(
         sunlightEntity = EntityManager.get().create()
         LightManager.Builder(LightManager.Type.DIRECTIONAL)
             .color(0.98f, 0.92f, 0.82f)
-            .intensity(95_000f)
+            .intensity(110_000f)
             .direction(-0.6f, -1.2f, -0.8f)
             .castShadows(true)
             .build(engine, sunlightEntity)
@@ -97,11 +113,36 @@ class FilamentGameScene(
         torchEntity = EntityManager.get().create()
         LightManager.Builder(LightManager.Type.POINT)
             .color(1.0f, 0.55f, 0.15f)
-            .intensity(250_000f)
+            .intensity(280_000f)
             .position(0f, 2.2f, 0f)
-            .falloff(12f)
+            .falloff(14f)
             .build(engine, torchEntity)
         scene.addEntity(torchEntity)
+    }
+
+    private fun load3DAssets() {
+        arenaAsset = loadGlb("models/arena_dark_sanctuary.glb")
+        playerAsset = loadGlb("models/modular_mannequin.glb")
+        weaponAsset = loadGlb("models/weapon_katana.glb")
+    }
+
+    private fun loadGlb(assetPath: String): FilamentAsset? {
+        return try {
+            val bytes = context.assets.open(assetPath).use { it.readBytes() }
+            val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
+                put(bytes)
+                flip()
+            }
+            val asset = assetLoader.createAsset(buffer)
+            if (asset != null) {
+                resourceLoader.loadResources(asset)
+                modelViewer.scene.addEntities(asset.entities)
+            }
+            asset
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 
     private fun wireOverlayCallbacks() {
@@ -185,7 +226,22 @@ class FilamentGameScene(
 
     fun destroy() {
         stop()
-        modelViewer.destroyModel()
+        arenaAsset?.let {
+            modelViewer.scene.removeEntities(it.entities)
+            assetLoader.destroyAsset(it)
+        }
+        playerAsset?.let {
+            modelViewer.scene.removeEntities(it.entities)
+            assetLoader.destroyAsset(it)
+        }
+        weaponAsset?.let {
+            modelViewer.scene.removeEntities(it.entities)
+            assetLoader.destroyAsset(it)
+        }
+        assetLoader.destroy()
+        materialProvider.destroy()
+        resourceLoader.destroy()
+
         val engine = modelViewer.engine
         val scene = modelViewer.scene
         if (sunlightEntity != 0) {
@@ -256,11 +312,63 @@ class FilamentGameScene(
             }
         }
 
-        // 3. Constrain Player to Arena Perimeter (18m radius)
+        // 3. Constrain Player to Arena Perimeter (17.5m radius)
         playerCapsule.baseCenter = playerPosition
-        playerCapsule.clampToArena(18f)
+        playerCapsule.clampToArena(17.5f)
 
-        // 4. Update Third-Person Orbit Camera
+        // 4. Update 3D Player Transform
+        playerAsset?.let { asset ->
+            val tm = modelViewer.engine.transformManager
+            val inst = tm.getInstance(asset.root)
+            if (inst != 0) {
+                Matrix.setIdentityM(playerTransform, 0)
+                Matrix.translateM(playerTransform, 0, playerPosition.x, playerPosition.y, playerPosition.z)
+                Matrix.rotateM(playerTransform, 0, playerYawDeg, 0f, 1f, 0f)
+
+                // If rolling, pitch forward around X axis
+                if (isRolling) {
+                    val rollProgress = (rollTimer / rollDuration).coerceIn(0f, 1f)
+                    val pitchAngle = rollProgress * 360f
+                    Matrix.rotateM(playerTransform, 0, pitchAngle, 1f, 0f, 0f)
+                }
+                tm.setTransform(inst, playerTransform)
+            }
+        }
+
+        // 5. Update 3D Weapon Transform (Sheathed vs In Hand Swing)
+        weaponAsset?.let { wpn ->
+            val tm = modelViewer.engine.transformManager
+            val inst = tm.getInstance(wpn.root)
+            if (inst != 0) {
+                Matrix.setIdentityM(weaponTransform, 0)
+                if (isAttacking) {
+                    // Attack Swing: drawn in right hand with dynamic slashing arc
+                    Matrix.translateM(weaponTransform, 0, playerPosition.x, playerPosition.y, playerPosition.z)
+                    Matrix.rotateM(weaponTransform, 0, playerYawDeg, 0f, 1f, 0f)
+                    Matrix.translateM(weaponTransform, 0, 0.35f, 0.95f, 0.15f)
+
+                    val swingProgress = (attackTimer / attackDuration).coerceIn(0f, 1f)
+                    val swingAngle = -35f + swingProgress * 130f
+                    Matrix.rotateM(weaponTransform, 0, swingAngle, 1f, 0f, 0f)
+                    Matrix.rotateM(weaponTransform, 0, -25f, 0f, 1f, 0f)
+                } else if (!overlay.isWeaponSheathed) {
+                    // Drawn in right hand, resting in ready combat guard stance
+                    Matrix.translateM(weaponTransform, 0, playerPosition.x, playerPosition.y, playerPosition.z)
+                    Matrix.rotateM(weaponTransform, 0, playerYawDeg, 0f, 1f, 0f)
+                    Matrix.translateM(weaponTransform, 0, 0.32f, 0.85f, 0.10f)
+                    Matrix.rotateM(weaponTransform, 0, -25f, 1f, 0f, 0f)
+                } else {
+                    // Sheathed diagonally on back!
+                    Matrix.translateM(weaponTransform, 0, playerPosition.x, playerPosition.y, playerPosition.z)
+                    Matrix.rotateM(weaponTransform, 0, playerYawDeg, 0f, 1f, 0f)
+                    Matrix.translateM(weaponTransform, 0, 0.08f, 1.25f, -0.18f)
+                    Matrix.rotateM(weaponTransform, 0, 160f, 0f, 0f, 1f)
+                }
+                tm.setTransform(inst, weaponTransform)
+            }
+        }
+
+        // 6. Update Third-Person Orbit Camera
         camera3D.update(playerPosition, dt)
         val eye = camera3D.eye
         val center = camera3D.lookAt
@@ -271,10 +379,10 @@ class FilamentGameScene(
             0.0, 1.0, 0.0
         )
 
-        // 5. Render 3D Frame
+        // 7. Render 3D Frame
         modelViewer.render(frameTimeNanos)
 
-        // 6. Request next frame
+        // 8. Request next frame
         choreographer.postFrameCallback(this)
     }
 }
