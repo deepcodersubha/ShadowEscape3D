@@ -32,6 +32,10 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
     var onLockOnToggle: (() -> Unit)? = null
     var onHealFlask: (() -> Unit)? = null
     var onSheathToggle: (() -> Unit)? = null
+    var onArmorToggle: (() -> Unit)? = null
+    var onWeaponToggle: (() -> Unit)? = null
+    var currentArmorName: String = "RANGER"
+    var currentWeaponName: String = "SWORD"
 
     // Locomotion Output
     var joystickX: Float = 0f  // [-1f, 1f]
@@ -64,7 +68,7 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
     private var cameraPointerId: Int = -1
     private var lastTouchX: Float = 0f
     private var lastTouchY: Float = 0f
-    private val lookSensitivity: Float = 0.22f
+    private val lookSensitivity: Float = 0.38f
 
     // Action Buttons
     private val attackBtnRect = RectF()
@@ -73,6 +77,8 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
     private val lockBtnRect = RectF()
     private val healBtnRect = RectF()
     private val sheathBtnRect = RectF()
+    private val armorBtnRect = RectF()
+    private val swapWpnBtnRect = RectF()
 
     private var rollTouchStartTime: Long = 0L
 
@@ -137,6 +143,16 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         val healX = w - margin - healRadius - 10f * density
         val healY = 80f * density
         healBtnRect.set(healX - healRadius, healY - healRadius, healX + healRadius, healY + healRadius)
+
+        // Modular Armor Swap Button: To the left of Flask
+        val armorX = healX - healRadius * 2f - 16f * density
+        val armorY = healY
+        armorBtnRect.set(armorX - healRadius, armorY - healRadius, armorX + healRadius, armorY + healRadius)
+
+        // Modular Weapon Swap Button: To the left of Armor
+        val wpnX = armorX - healRadius * 2f - 16f * density
+        val wpnY = healY
+        swapWpnBtnRect.set(wpnX - healRadius, wpnY - healRadius, wpnX + healRadius, wpnY + healRadius)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -145,6 +161,8 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         val pointerId = event.getPointerId(actionIndex)
         val x = event.getX(actionIndex)
         val y = event.getY(actionIndex)
+
+        android.util.Log.d("DualZoneTouchOverlay", "onTouchEvent: action=$action, pointerId=$pointerId, x=$x, y=$y, camId=$cameraPointerId, cam=$camera")
 
         when (action) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -176,13 +194,24 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
                     invalidate()
                     return true
                 }
+                if (armorBtnRect.contains(x, y)) {
+                    onArmorToggle?.invoke()
+                    invalidate()
+                    return true
+                }
+                if (swapWpnBtnRect.contains(x, y)) {
+                    onWeaponToggle?.invoke()
+                    invalidate()
+                    return true
+                }
                 if (rollBtnRect.contains(x, y)) {
                     rollTouchStartTime = System.currentTimeMillis()
                     return true
                 }
 
-                // If on left side: initialize floating joystick
-                if (x < width * 0.42f && joystickPointerId == -1) {
+                // Dedicated Floating Joystick Zone: strictly lower-left quadrant
+                val isInJoystickZone = (x < width * 0.40f && y > height * 0.38f)
+                if (isInJoystickZone && joystickPointerId == -1) {
                     joystickPointerId = pointerId
                     stickBaseX = x
                     stickBaseY = y
@@ -193,11 +222,12 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
                     return true
                 }
 
-                // If on right side: initialize camera orbit drag
-                if (x >= width * 0.42f && cameraPointerId == -1) {
+                // Global Camera Pan Zone: Upper half of screen, right side, or empty areas
+                if (cameraPointerId == -1) {
                     cameraPointerId = pointerId
                     lastTouchX = x
                     lastTouchY = y
+                    android.util.Log.d("DualZoneTouchOverlay", "Assigned cameraPointerId=$cameraPointerId at ($x, $y)")
                     return true
                 }
             }
@@ -229,8 +259,15 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
                         val dx = px - lastTouchX
                         val dy = py - lastTouchY
                         camera?.rotate(dx * lookSensitivity, dy * lookSensitivity)
+                        android.util.Log.d("DualZoneTouchOverlay", "camera.rotate dx=$dx, dy=$dy, yaw=${camera?.yawDeg}")
                         lastTouchX = px
                         lastTouchY = py
+                    } else if (cameraPointerId == -1 && pId != joystickPointerId) {
+                        // Adopt free moving finger for camera look
+                        cameraPointerId = pId
+                        lastTouchX = px
+                        lastTouchY = py
+                        android.util.Log.d("DualZoneTouchOverlay", "Adopted cameraPointerId=$cameraPointerId in ACTION_MOVE")
                     }
                 }
             }
@@ -292,6 +329,8 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         drawActionButton(canvas, sheathBtnRect, if (isWeaponSheathed) "🗡️" else "✨", if (isWeaponSheathed) "DRAW" else "SHEATH", "#99334155", "#CBD5E1")
         drawActionButton(canvas, lockBtnRect, "🎯", "LOCK", if (isTargetLocked) "#99B91C1C" else "#991E293B", if (isTargetLocked) "#EF4444" else "#64748B")
         drawActionButton(canvas, healBtnRect, "🧪", "FLASK", "#99065F46", "#34D399")
+        drawActionButton(canvas, armorBtnRect, "🛡️", currentArmorName, "#99475569", "#94A3B8")
+        drawActionButton(canvas, swapWpnBtnRect, "🗡️", currentWeaponName, "#991E3A8A", "#60A5FA")
 
         // 3. Draw Top-Left Soulslike HUD: HP & Stamina Bars
         drawSoulslikeHUD(canvas)

@@ -17,13 +17,13 @@ class ThirdPersonOrbitCamera {
     var maxDistance: Float = 7.0f
 
     var yawDeg: Float = 0f          // Horizontal angle in degrees
-    var pitchDeg: Float = 22f       // Vertical angle in degrees (higher = looking down)
-    val minPitchDeg: Float = -10f
-    val maxPitchDeg: Float = 65f
+    var pitchDeg: Float = 20f       // Vertical angle in degrees (higher = looking down)
+    val minPitchDeg: Float = -15f
+    val maxPitchDeg: Float = 75f
 
     // Dynamic smoothing
     private var currentYaw: Float = 0f
-    private var currentPitch: Float = 22f
+    private var currentPitch: Float = 20f
     private var currentEye: Vector3 = Vector3(0f, 2f, 4f)
     private var currentLookAt: Vector3 = Vector3(0f, 1f, 0f)
 
@@ -55,11 +55,13 @@ class ThirdPersonOrbitCamera {
         }
 
     fun rotate(deltaYaw: Float, deltaPitch: Float) {
-        if (!isLockedOn) {
-            yawDeg = (yawDeg + deltaYaw) % 360f
-            if (yawDeg < 0f) yawDeg += 360f
-            pitchDeg = (pitchDeg - deltaPitch).coerceIn(minPitchDeg, maxPitchDeg)
+        // Swiping to look around automatically unlocks target if locked
+        if (isLockedOn) {
+            isLockedOn = false
         }
+        yawDeg = (yawDeg + deltaYaw) % 360f
+        if (yawDeg < 0f) yawDeg += 360f
+        pitchDeg = (pitchDeg - deltaPitch).coerceIn(minPitchDeg, maxPitchDeg)
     }
 
     fun update(playerPos: Vector3, dt: Float) {
@@ -76,15 +78,15 @@ class ThirdPersonOrbitCamera {
             var diff = (desiredYaw - yawDeg) % 360f
             if (diff < -180f) diff += 360f
             if (diff > 180f) diff -= 360f
-            yawDeg += diff * (dt * 6.0f).coerceIn(0f, 1f)
+            yawDeg += diff * (dt * 8.0f).coerceIn(0f, 1f)
 
             // Dynamic pitch based on distance
             val dist = sqrt(toEnemyX * toEnemyX + toEnemyZ * toEnemyZ)
             pitchDeg = (25f - dist * 1.2f).coerceIn(12f, 38f)
         }
 
-        // Smooth camera damping
-        val smoothFactor = (dt * 12.0f).coerceIn(0.01f, 1f)
+        // Crisp camera damping
+        val smoothFactor = (dt * 18.0f).coerceIn(0.01f, 1f)
         var yawDiff = (yawDeg - currentYaw) % 360f
         if (yawDiff < -180f) yawDiff += 360f
         if (yawDiff > 180f) yawDiff -= 360f
