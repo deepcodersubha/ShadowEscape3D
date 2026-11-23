@@ -98,10 +98,11 @@ class FilamentGameScene(
     private var crossFadeTimer: Float = 0f
     private val crossFadeDuration: Float = 0.22f // 220ms smooth blend
 
-    var isRolling: Boolean = false
-    var rollTimer: Float = 0f
-    val rollDuration: Float = 0.85f
-    var rollVelocity: Vector3 = Vector3.ZERO
+    var isDodging: Boolean = false
+    var dodgeTimer: Float = 0f
+    var currentDodgeDuration: Float = 0.85f
+    var currentDodgeAnimName: String = "Dodge_Fwd"
+    var dodgeVelocity: Vector3 = Vector3.ZERO
 
     // Target Dummy / Enemy (positioned at north edge of arena for spacious combat arena)
     val enemyPosition: Vector3 = Vector3(0f, 0f, -8.0f)
@@ -409,7 +410,7 @@ class FilamentGameScene(
 
     private fun wireOverlayCallbacks() {
         overlay.onLightAttack = {
-            if (!isRolling && stats.currentStamina >= 12f) {
+            if (!isDodging && stats.currentStamina >= 12f) {
                 // If locked on, orient player towards target before striking
                 if (camera3D.isLockedOn) {
                     val toEnemyX = enemyPosition.x - playerPosition.x
@@ -430,7 +431,7 @@ class FilamentGameScene(
         }
 
         overlay.onHeavyAttack = {
-            if (!isRolling && stats.currentStamina >= 30f) {
+            if (!isDodging && stats.currentStamina >= 30f) {
                 if (camera3D.isLockedOn) {
                     val toEnemyX = enemyPosition.x - playerPosition.x
                     val toEnemyZ = enemyPosition.z - playerPosition.z
@@ -457,24 +458,68 @@ class FilamentGameScene(
         }
 
         overlay.onDodgeRoll = {
-            if (!isRolling && stats.currentStamina >= 20f) {
-                isRolling = true
-                isAttacking = false // Dodge roll cancels attack
+            if (!isDodging && stats.currentStamina >= 15f) {
+                isDodging = true
+                isAttacking = false // Dodge cancels attack
                 comboStep = 0
                 comboQueued = false
-                rollTimer = 0f
-                stats.useStamina(20f)
+                dodgeTimer = 0f
+                stats.useStamina(15f)
 
-                // Direction of roll: if moving, roll in move direction; otherwise roll backwards
-                val joyX = overlay.joystickX
-                val joyY = overlay.joystickY
-                if (joyX * joyX + joyY * joyY > 0.05f) {
-                    val moveDir = (camera3D.horizontalForward * joyY) + (camera3D.horizontalRight * joyX)
-                    rollVelocity = moveDir.normalized() * 7.5f
-                    playerYawDeg = Math.toDegrees(atan2(moveDir.x.toDouble(), moveDir.z.toDouble())).toFloat()
-                } else {
-                    rollVelocity = (camera3D.horizontalForward * -1f) * 6.0f
+                var joyX = overlay.joystickX
+                var joyY = overlay.joystickY
+                var stickMagSq = joyX * joyX + joyY * joyY
+
+                // Support quick-tap grace period: if stick was deflected within last 250ms, use that direction
+                if (stickMagSq < 0.05f && (System.currentTimeMillis() - overlay.lastActiveJoystickTime) < 250L) {
+                    val lastSq = overlay.lastActiveJoystickX * overlay.lastActiveJoystickX + overlay.lastActiveJoystickY * overlay.lastActiveJoystickY
+                    if (lastSq >= 0.05f) {
+                        joyX = overlay.lastActiveJoystickX
+                        joyY = overlay.lastActiveJoystickY
+                        stickMagSq = lastSq
+                    }
                 }
+
+                val fwd = camera3D.horizontalForward.normalized()
+                val right = camera3D.horizontalRight.normalized()
+
+                if (stickMagSq < 0.05f) {
+                    // Neutral / No joystick input: backward leap dodge retreat
+                    currentDodgeAnimName = "Dodge_Bwd"
+                    currentDodgeDuration = 0.95f
+                    dodgeVelocity = (fwd * -1f) * 4.8f
+                } else {
+                    val absX = kotlin.math.abs(joyX)
+                    val absY = kotlin.math.abs(joyY)
+
+                    if (absY >= absX) {
+                        if (joyY > 0f) {
+                            // Forward dash dodge
+                            currentDodgeAnimName = "Dodge_Fwd"
+                            currentDodgeDuration = 0.85f
+                            dodgeVelocity = fwd * 6.5f
+                            playerYawDeg = Math.toDegrees(atan2(fwd.x.toDouble(), fwd.z.toDouble())).toFloat()
+                        } else {
+                            // Backward leap dodge
+                            currentDodgeAnimName = "Dodge_Bwd"
+                            currentDodgeDuration = 0.95f
+                            dodgeVelocity = (fwd * -1f) * 5.0f
+                        }
+                    } else {
+                        if (joyX < 0f) {
+                            // Left sidestep dodge
+                            currentDodgeAnimName = "Dodge_Left"
+                            currentDodgeDuration = 0.80f
+                            dodgeVelocity = (right * -1f) * 5.2f
+                        } else {
+                            // Right sidestep dodge
+                            currentDodgeAnimName = "Dodge_Right"
+                            currentDodgeDuration = 0.80f
+                            dodgeVelocity = right * 5.2f
+                        }
+                    }
+                }
+                Log.i("FilamentGameScene", ">>> DODGE TRIGGERED: anim=$currentDodgeAnimName, joy=($joyX, $joyY), vel=(${dodgeVelocity.x}, ${dodgeVelocity.z})")
             }
         }
 
@@ -494,7 +539,7 @@ class FilamentGameScene(
         }
 
         overlay.onSheathToggle = {
-            if (!isAttacking && !isRolling) {
+            if (!isAttacking && !isDodging) {
                 updateWeaponSocket()
                 updateShieldSocket()
                 overlay.postInvalidate()
@@ -631,11 +676,13 @@ class FilamentGameScene(
         val joyY = overlay.joystickY
         val stickMagSq = joyX * joyX + joyY * joyY
 
-        if (isRolling) {
-            rollTimer += dt
-            playerPosition.add(rollVelocity.x * dt, 0f, rollVelocity.z * dt)
-            if (rollTimer >= rollDuration) {
-                isRolling = false
+        if (isDodging) {
+            dodgeTimer += dt
+            val progress = (dodgeTimer / currentDodgeDuration).coerceIn(0f, 1f)
+            val speedDecay = (1.0f - progress * 0.65f).coerceAtLeast(0.20f)
+            playerPosition.add(dodgeVelocity.x * speedDecay * dt, 0f, dodgeVelocity.z * speedDecay * dt)
+            if (dodgeTimer >= currentDodgeDuration) {
+                isDodging = false
             }
         } else if (isAttacking) {
             attackTimer += dt
@@ -672,13 +719,13 @@ class FilamentGameScene(
         }
 
         // Player directional movement via virtual joystick with dynamic walk/run speeds
-        val isMoving = stickMagSq > 0.03f && !isRolling && !isAttacking
+        val isMoving = stickMagSq > 0.03f && !isDodging && !isAttacking
         val stickMag = kotlin.math.sqrt(stickMagSq).coerceIn(0f, 1f)
         // Natural run: joystick pushed past 60% outer deflection OR holding Sprint button
         val isRunning = isMoving && (overlay.isSprinting || stickMag > 0.60f) && stats.currentStamina > 3f
         var currentMoveSpeed = 0f
 
-        if (!isRolling && !isAttacking && isMoving) {
+        if (!isDodging && !isAttacking && isMoving) {
             currentMoveSpeed = if (isRunning) {
                 if (overlay.isSprinting) {
                     stats.useStamina(10f * dt)
@@ -710,7 +757,7 @@ class FilamentGameScene(
 
         // 4. Update Skeletal Animation
         val targetAnim = when {
-            isRolling -> "Roll"
+            isDodging -> currentDodgeAnimName
             isAttacking -> currentAttackAnimName
             overlay.isWeaponSheathed -> {
                 when {
@@ -792,13 +839,6 @@ class FilamentGameScene(
                 Matrix.translateM(playerTransform, 0, playerPosition.x, playerPosition.y, playerPosition.z)
                 // Orient character directly towards playerYawDeg (matches movement direction)
                 Matrix.rotateM(playerTransform, 0, playerYawDeg, 0f, 1f, 0f)
-
-                // If rolling, execute full 360° forward tactical combat roll
-                if (isRolling) {
-                    val rollProgress = (rollTimer / rollDuration).coerceIn(0f, 1f)
-                    val pitchAngle = -rollProgress * 360f
-                    Matrix.rotateM(playerTransform, 0, pitchAngle, 1f, 0f, 0f)
-                }
                 tm.setTransform(inst, playerTransform)
             }
         }

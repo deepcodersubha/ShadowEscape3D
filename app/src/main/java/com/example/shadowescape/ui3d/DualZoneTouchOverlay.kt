@@ -42,6 +42,9 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
     // Locomotion Output
     var joystickX: Float = 0f  // [-1f, 1f]
     var joystickY: Float = 0f  // [-1f, 1f] (positive = forward)
+    var lastActiveJoystickX: Float = 0f
+    var lastActiveJoystickY: Float = 0f
+    var lastActiveJoystickTime: Long = 0L
     var isSprinting: Boolean = false
 
     // HUD Data
@@ -272,6 +275,9 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
                             joystickX = (dx * factor) / stickRadius
                             // In screen coordinates Y is down, so invert for forward
                             joystickY = -(dy * factor) / stickRadius
+                            lastActiveJoystickX = joystickX
+                            lastActiveJoystickY = joystickY
+                            lastActiveJoystickTime = System.currentTimeMillis()
                         }
                         invalidate()
                     } else if (pId == cameraPointerId) {

@@ -18,6 +18,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var touchOverlay: DualZoneTouchOverlay
     private var gameScene: FilamentGameScene? = null
 
+    private val debugReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            if (intent?.action == "com.example.shadowescape.DODGE") {
+                val x = intent.getFloatExtra("x", 0f)
+                val y = intent.getFloatExtra("y", 0f)
+                touchOverlay.joystickX = x
+                touchOverlay.joystickY = y
+                touchOverlay.lastActiveJoystickX = x
+                touchOverlay.lastActiveJoystickY = y
+                touchOverlay.lastActiveJoystickTime = System.currentTimeMillis()
+                touchOverlay.onDodgeRoll?.invoke()
+            }
+        }
+    }
+
     companion object {
         init {
             // Initialize Filament native JNI shared libraries
@@ -60,6 +75,13 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(root)
         gameScene = FilamentGameScene(this, surfaceView, touchOverlay)
+
+        val filter = android.content.IntentFilter("com.example.shadowescape.DODGE")
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(debugReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(debugReceiver, filter)
+        }
     }
 
     override fun onResume() {
@@ -74,6 +96,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(debugReceiver)
+        } catch (_: Exception) {}
         gameScene?.destroy()
         gameScene = null
     }
