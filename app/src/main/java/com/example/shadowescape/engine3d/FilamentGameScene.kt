@@ -135,7 +135,7 @@ class FilamentGameScene(
 
     private fun setupSkybox() {
         val skybox = Skybox.Builder()
-            .color(0.14f, 0.18f, 0.26f, 1.0f) // Twilight atmospheric dusk
+            .color(0.52f, 0.70f, 0.88f, 1.0f) // Bright atmospheric stylized nature sky
             .build(modelViewer.engine)
         modelViewer.scene.skybox = skybox
     }
@@ -185,9 +185,9 @@ class FilamentGameScene(
     }
 
     private fun load3DAssets() {
-        Log.d("FilamentGameScene", "Clean slate mode: cleared 3D scene. Only HUD and environment active.")
-        // Everything in 3D scene removed per user request.
-        // Ready to wire in one verified element at a time.
+        Log.d("FilamentGameScene", "Loading Quaternius nature sanctuary meadow arena...")
+        arenaAsset = loadGlb("models/arena_nature_meadow.glb")
+        Log.d("FilamentGameScene", "Loaded nature arena: $arenaAsset")
     }
 
     fun attachWeapon(assetPath: String) {
