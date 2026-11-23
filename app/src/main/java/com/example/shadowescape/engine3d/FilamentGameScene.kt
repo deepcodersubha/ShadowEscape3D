@@ -101,7 +101,7 @@ class FilamentGameScene(
     private var previousAnimIdx: Int = -1
     private var previousAnimTime: Float = 0f
     private var crossFadeTimer: Float = 0f
-    private val crossFadeDuration: Float = 0.22f // 220ms smooth blend
+    private var crossFadeDuration: Float = 0.20f // Dynamic crossfade blend duration
 
     var isDodging: Boolean = false
     var dodgeTimer: Float = 0f
@@ -392,6 +392,7 @@ class FilamentGameScene(
                 1 -> {
                     currentAttackAnimName = "Draw_Arrow"
                     currentAttackDuration = 0.80f
+                    crossFadeDuration = 0.18f
                     stats.useStamina(10f)
                     pendingDamage = equippedWeapon.calculateEffectiveDamage(stats)
                     pendingIsHeavy = false
@@ -400,6 +401,7 @@ class FilamentGameScene(
                 2 -> {
                     currentAttackAnimName = "Aim_Hold"
                     currentAttackDuration = 0.70f
+                    crossFadeDuration = 0.15f
                     stats.useStamina(12f)
                     pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.30f
                     pendingIsHeavy = false
@@ -408,6 +410,7 @@ class FilamentGameScene(
                 3 -> {
                     currentAttackAnimName = "Shoot_Recoil"
                     currentAttackDuration = 0.60f
+                    crossFadeDuration = 0.10f
                     stats.useStamina(16f)
                     pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.85f
                     pendingIsHeavy = false
@@ -419,29 +422,32 @@ class FilamentGameScene(
             when (step) {
                 1 -> {
                     currentAttackAnimName = "Slash_Inward"
-                    currentAttackDuration = 0.65f
+                    currentAttackDuration = 0.72f
+                    crossFadeDuration = 0.15f
                     stats.useStamina(10f)
                     pendingDamage = equippedWeapon.calculateEffectiveDamage(stats)
                     pendingIsHeavy = false
-                    hitWindowTime = 0.28f
+                    hitWindowTime = 0.38f
                     soundManager.playSlash(1.0f)
                 }
                 2 -> {
                     currentAttackAnimName = "Slash_Outward"
-                    currentAttackDuration = 0.70f
+                    currentAttackDuration = 0.75f
+                    crossFadeDuration = 0.10f // Fast 100ms combo link
                     stats.useStamina(12f)
                     pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.35f
                     pendingIsHeavy = false
-                    hitWindowTime = 0.28f
+                    hitWindowTime = 0.42f
                     soundManager.playSlash(1.15f)
                 }
                 3 -> {
                     currentAttackAnimName = "Slash_Downward"
-                    currentAttackDuration = 0.85f
+                    currentAttackDuration = 0.88f
+                    crossFadeDuration = 0.10f // Fast 100ms combo link
                     stats.useStamina(18f)
                     pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.85f
                     pendingIsHeavy = false
-                    hitWindowTime = 0.32f
+                    hitWindowTime = 0.38f
                     soundManager.playSlash(0.85f)
                 }
             }
@@ -500,12 +506,25 @@ class FilamentGameScene(
 
                 if (!isAttacking) {
                     executeComboStrike(1)
-                } else if (attackTimer < 0.20f) {
-                    comboQueued = true
-                } else if (comboStep == 1 && attackTimer >= 0.20f) {
-                    executeComboStrike(2)
-                } else if (comboStep == 2 && attackTimer >= 0.20f) {
-                    executeComboStrike(3)
+                } else {
+                    val isBow = equippedWeapon.type == WeaponType.BOW
+                    if (!isBow) {
+                        if (comboStep == 1) {
+                            if (attackTimer >= 0.42f) {
+                                executeComboStrike(2)
+                            } else {
+                                comboQueued = true
+                            }
+                        } else if (comboStep == 2) {
+                            if (attackTimer >= 0.45f) {
+                                executeComboStrike(3)
+                            } else {
+                                comboQueued = true
+                            }
+                        }
+                    } else {
+                        comboQueued = true
+                    }
                 }
             }
         }
