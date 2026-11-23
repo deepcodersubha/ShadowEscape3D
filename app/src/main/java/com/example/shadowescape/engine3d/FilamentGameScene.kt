@@ -185,33 +185,9 @@ class FilamentGameScene(
     }
 
     private fun load3DAssets() {
-        Log.d("FilamentGameScene", "Starting load3DAssets")
-        arenaAsset = loadGlb("models/arena_dark_sanctuary.glb")
-        Log.d("FilamentGameScene", "Loaded arena: $arenaAsset")
-
-        // Load fully modular character (Ranger + Peasant with shared 65-bone skeleton)
-        playerAsset = loadGlb("models/player_modular.glb")
-        Log.d("FilamentGameScene", "Loaded player: $playerAsset")
-        playerAsset?.let {
-            equipmentManager = ModularEquipmentManager(modelViewer.scene, it)
-        }
-
-        enemyAsset = loadGlb("models/modular_mannequin.glb")
-        Log.d("FilamentGameScene", "Loaded enemy: $enemyAsset")
-
-        // Wire skeletal Animator for modular player character
-        playerAnimator = playerAsset?.instance?.animator
-        Log.d("FilamentGameScene", "Player animator: $playerAnimator")
-        playerAnimator?.let { anim ->
-            Log.d("FilamentGameScene", "Animation count: ${anim.animationCount}")
-            for (i in 0 until anim.animationCount) {
-                val name = anim.getAnimationName(i)
-                animationIndices[name] = i
-            }
-        }
-
-        // Socket initial weapon to right hand
-        attachWeapon("models/weapon_broadsword.glb")
+        Log.d("FilamentGameScene", "Clean slate mode: cleared 3D scene. Only HUD and environment active.")
+        // Everything in 3D scene removed per user request.
+        // Ready to wire in one verified element at a time.
     }
 
     fun attachWeapon(assetPath: String) {
