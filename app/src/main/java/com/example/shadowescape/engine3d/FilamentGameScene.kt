@@ -78,11 +78,11 @@ class FilamentGameScene(
     // Combat & RPG Stats
     val stats: PlayerStats = PlayerStats()
     private val soundManager = SoundManager(context)
-    var equippedWeapon: Weapon = Weapons.SUN_BOW
+    var equippedWeapon: Weapon = Weapons.STEEL_BROADSWORD
     var isAttacking: Boolean = false
     var attackTimer: Float = 0f
     var currentAttackDuration: Float = 1.0f
-    var currentAttackAnimName: String = "Draw_Arrow"
+    var currentAttackAnimName: String = "Slash_Inward"
     var comboStep: Int = 0
     var comboQueued: Boolean = false
     private var pendingDamage: Float = 0f
@@ -95,7 +95,7 @@ class FilamentGameScene(
     // Modular Armor & Weapon Equipment Systems
     var equipmentManager: ModularEquipmentManager? = null
         private set
-    private var currentWeaponType: Int = 0 // 0 = Longbow, 1 = Broadsword, 2 = Katana
+    private var currentWeaponType: Int = 1 // 0 = Longbow, 1 = Broadsword, 2 = Katana
 
     // Animation Cross-Fading & State Blending
     private var previousAnimIdx: Int = -1
@@ -133,7 +133,7 @@ class FilamentGameScene(
         Log.d("FilamentGameScene", "Manipulator methods: " + Manipulator::class.java.methods.map { "${it.name}(${it.parameterTypes.map { p -> p.simpleName }.joinToString()})" }.joinToString("; "))
         overlay.camera = camera3D
         overlay.equippedWeapon = equippedWeapon
-        overlay.currentWeaponName = "LONGBOW"
+        overlay.currentWeaponName = "SWORD"
         overlay.isWeaponSheathed = false
         overlay.isShieldEquipped = false
 
@@ -214,8 +214,8 @@ class FilamentGameScene(
             }
         }
 
-        // Attach Longbow weapon
-        attachWeapon("models/weapon_longbow.glb")
+        // Attach Steel Broadsword weapon by default
+        attachWeapon("models/weapon_broadsword.glb")
     }
 
     fun attachWeapon(assetPath: String) {
@@ -386,32 +386,67 @@ class FilamentGameScene(
             updateShieldSocket()
         }
 
-        when (step) {
-            1 -> {
-                currentAttackAnimName = "Draw_Arrow"
-                currentAttackDuration = 0.80f
-                stats.useStamina(10f)
-                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats)
-                pendingIsHeavy = false
-                hitWindowTime = 0.40f
+        val isBow = equippedWeapon.type == WeaponType.BOW
+        if (isBow) {
+            when (step) {
+                1 -> {
+                    currentAttackAnimName = "Draw_Arrow"
+                    currentAttackDuration = 0.80f
+                    stats.useStamina(10f)
+                    pendingDamage = equippedWeapon.calculateEffectiveDamage(stats)
+                    pendingIsHeavy = false
+                    hitWindowTime = 0.40f
+                }
+                2 -> {
+                    currentAttackAnimName = "Aim_Hold"
+                    currentAttackDuration = 0.70f
+                    stats.useStamina(12f)
+                    pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.30f
+                    pendingIsHeavy = false
+                    hitWindowTime = 0.35f
+                }
+                3 -> {
+                    currentAttackAnimName = "Shoot_Recoil"
+                    currentAttackDuration = 0.60f
+                    stats.useStamina(16f)
+                    pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.85f
+                    pendingIsHeavy = false
+                    hitWindowTime = 0.15f
+                }
             }
-            2 -> {
-                currentAttackAnimName = "Aim_Hold"
-                currentAttackDuration = 0.70f
-                stats.useStamina(12f)
-                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.30f
-                pendingIsHeavy = false
-                hitWindowTime = 0.35f
-            }
-            3 -> {
-                currentAttackAnimName = "Shoot_Recoil"
-                currentAttackDuration = 0.60f
-                stats.useStamina(16f)
-                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.85f
-                pendingIsHeavy = false
-                hitWindowTime = 0.15f
+        } else {
+            // Mixamo 3-strike sword combo: Inward Slash -> Outward Return -> Downward Finisher
+            when (step) {
+                1 -> {
+                    currentAttackAnimName = "Slash_Inward"
+                    currentAttackDuration = 0.65f
+                    stats.useStamina(10f)
+                    pendingDamage = equippedWeapon.calculateEffectiveDamage(stats)
+                    pendingIsHeavy = false
+                    hitWindowTime = 0.28f
+                    soundManager.playSlash(1.0f)
+                }
+                2 -> {
+                    currentAttackAnimName = "Slash_Outward"
+                    currentAttackDuration = 0.70f
+                    stats.useStamina(12f)
+                    pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.35f
+                    pendingIsHeavy = false
+                    hitWindowTime = 0.28f
+                    soundManager.playSlash(1.15f)
+                }
+                3 -> {
+                    currentAttackAnimName = "Slash_Downward"
+                    currentAttackDuration = 0.85f
+                    stats.useStamina(18f)
+                    pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.85f
+                    pendingIsHeavy = false
+                    hitWindowTime = 0.32f
+                    soundManager.playSlash(0.85f)
+                }
             }
         }
+        Log.i("FilamentGameScene", ">>> COMBO STRIKE $step: anim=$currentAttackAnimName, wpn=${equippedWeapon.name}")
     }
 
     private fun spawnArrow() {
@@ -455,7 +490,7 @@ class FilamentGameScene(
 
     private fun wireOverlayCallbacks() {
         overlay.onLightAttack = {
-            if (!isDodging && stats.currentStamina >= 12f) {
+            if (!isDodging && stats.currentStamina >= 10f) {
                 // If locked on, orient player towards target before striking
                 if (camera3D.isLockedOn) {
                     val toEnemyX = enemyPosition.x - playerPosition.x
@@ -465,18 +500,18 @@ class FilamentGameScene(
 
                 if (!isAttacking) {
                     executeComboStrike(1)
-                } else if (attackTimer < 0.25f) {
+                } else if (attackTimer < 0.20f) {
                     comboQueued = true
-                } else if (comboStep == 1 && attackTimer >= 0.25f) {
+                } else if (comboStep == 1 && attackTimer >= 0.20f) {
                     executeComboStrike(2)
-                } else if (comboStep == 2 && attackTimer >= 0.25f) {
+                } else if (comboStep == 2 && attackTimer >= 0.20f) {
                     executeComboStrike(3)
                 }
             }
         }
 
         overlay.onHeavyAttack = {
-            if (!isDodging && stats.currentStamina >= 30f) {
+            if (!isDodging && stats.currentStamina >= 25f && !isAttacking) {
                 if (camera3D.isLockedOn) {
                     val toEnemyX = enemyPosition.x - playerPosition.x
                     val toEnemyZ = enemyPosition.z - playerPosition.z
@@ -490,15 +525,23 @@ class FilamentGameScene(
                     updateWeaponSocket()
                     updateShieldSocket()
                 }
-                currentAttackAnimName = "Melee_Kick"
-                currentAttackDuration = 1.15f
+                val isBow = equippedWeapon.type == WeaponType.BOW
+                if (isBow) {
+                    currentAttackAnimName = "Shoot_Recoil"
+                    currentAttackDuration = 0.70f
+                    hitWindowTime = 0.15f
+                } else {
+                    currentAttackAnimName = "Slash_Downward"
+                    currentAttackDuration = 0.90f
+                    hitWindowTime = 0.35f
+                    soundManager.playSlash(0.80f)
+                }
                 attackTimer = 0f
                 hasHitRegistered = false
                 stats.useStamina(25f)
 
                 pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 2.2f
                 pendingIsHeavy = true
-                hitWindowTime = 0.45f
             }
         }
 
@@ -635,8 +678,10 @@ class FilamentGameScene(
 
     private fun checkHit(dmg: Float, isHeavy: Boolean) {
         val dist = playerPosition.distanceTo(enemyPosition)
-        if (dist <= 2.2f) {
+        if (dist <= 2.6f) {
             enemyHp = (enemyHp - dmg).coerceAtLeast(0f)
+            soundManager.playSlash(if (isHeavy) 0.8f else 1.1f)
+            Log.i("FilamentGameScene", ">>> MELEE HIT ENEMY! Damage: $dmg, remaining enemyHp: $enemyHp")
         }
     }
 
@@ -753,11 +798,25 @@ class FilamentGameScene(
                 }
             }
 
+            // Small forward lunge on sword strikes for authentic melee momentum
+            if (currentAttackAnimName.startsWith("Slash_") && attackTimer < 0.25f) {
+                val lungeSpeed = when (comboStep) {
+                    1 -> 1.0f
+                    2 -> 1.2f
+                    3 -> 1.8f
+                    else -> 0.8f
+                } * (1.0f - attackTimer / 0.25f)
+                val rad = Math.toRadians(playerYawDeg.toDouble())
+                val lungeX = kotlin.math.sin(rad).toFloat() * lungeSpeed * dt
+                val lungeZ = kotlin.math.cos(rad).toFloat() * lungeSpeed * dt
+                playerPosition.add(lungeX, 0f, lungeZ)
+            }
+
             // Check if user buffered next combo attack during windup
-            if (comboQueued && attackTimer >= 0.25f) {
-                if (comboStep == 1 && stats.currentStamina >= 15f) {
+            if (comboQueued && attackTimer >= 0.20f) {
+                if (comboStep == 1 && stats.currentStamina >= 12f) {
                     executeComboStrike(2)
-                } else if (comboStep == 2 && stats.currentStamina >= 20f) {
+                } else if (comboStep == 2 && stats.currentStamina >= 18f) {
                     executeComboStrike(3)
                 } else {
                     comboQueued = false
@@ -771,7 +830,7 @@ class FilamentGameScene(
             } else if (isArchery && comboStep == 2 && !comboQueued && attackTimer >= currentAttackDuration) {
                 executeComboStrike(3)
             } else {
-                val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.65f).coerceAtLeast(0.40f)
+                val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.60f).coerceAtLeast(0.30f)
                 if (canCancelRecovery && stickMagSq > 0.08f) {
                     isAttacking = false
                     comboStep = 0
@@ -904,6 +963,7 @@ class FilamentGameScene(
             val playbackRate = when {
                 isRunning -> (currentMoveSpeed / 4.8f).coerceIn(0.9f, 1.4f)
                 isMoving -> (currentMoveSpeed / 2.2f).coerceIn(0.85f, 1.35f)
+                isAttacking && currentAnimationName.startsWith("Slash_") -> 1.35f
                 else -> 1.0f
             }
             playerAnimTime += dt * playbackRate
