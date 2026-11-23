@@ -817,28 +817,26 @@ class FilamentGameScene(
                 }
             }
 
-            // Small forward lunge on sword strikes for authentic melee momentum
-            if (currentAttackAnimName.startsWith("Slash_") && attackTimer < 0.25f) {
+            // Forward lunge on sword strikes for authentic melee momentum
+            if (currentAttackAnimName.startsWith("Slash_") && attackTimer in 0.12f..0.38f) {
                 val lungeSpeed = when (comboStep) {
-                    1 -> 1.0f
-                    2 -> 1.2f
-                    3 -> 1.8f
-                    else -> 0.8f
-                } * (1.0f - attackTimer / 0.25f)
+                    1 -> 1.5f
+                    2 -> 1.8f
+                    3 -> 2.4f
+                    else -> 1.2f
+                }
                 val rad = Math.toRadians(playerYawDeg.toDouble())
                 val lungeX = kotlin.math.sin(rad).toFloat() * lungeSpeed * dt
                 val lungeZ = kotlin.math.cos(rad).toFloat() * lungeSpeed * dt
                 playerPosition.add(lungeX, 0f, lungeZ)
             }
 
-            // Check if user buffered next combo attack during windup
-            if (comboQueued && attackTimer >= 0.20f) {
-                if (comboStep == 1 && stats.currentStamina >= 12f) {
+            // Check if user buffered next combo attack during swing
+            if (comboQueued) {
+                if (comboStep == 1 && attackTimer >= 0.42f && stats.currentStamina >= 12f) {
                     executeComboStrike(2)
-                } else if (comboStep == 2 && stats.currentStamina >= 18f) {
+                } else if (comboStep == 2 && attackTimer >= 0.45f && stats.currentStamina >= 18f) {
                     executeComboStrike(3)
-                } else {
-                    comboQueued = false
                 }
             }
 
@@ -849,15 +847,17 @@ class FilamentGameScene(
             } else if (isArchery && comboStep == 2 && !comboQueued && attackTimer >= currentAttackDuration) {
                 executeComboStrike(3)
             } else {
-                val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.60f).coerceAtLeast(0.30f)
+                val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.70f).coerceAtLeast(0.48f)
                 if (canCancelRecovery && stickMagSq > 0.08f) {
                     isAttacking = false
                     comboStep = 0
                     comboQueued = false
+                    crossFadeDuration = 0.20f
                 } else if (attackTimer >= currentAttackDuration) {
                     isAttacking = false
                     comboStep = 0
                     comboQueued = false
+                    crossFadeDuration = 0.20f
                 }
             }
         }
@@ -982,7 +982,9 @@ class FilamentGameScene(
             val playbackRate = when {
                 isRunning -> (currentMoveSpeed / 4.8f).coerceIn(0.9f, 1.4f)
                 isMoving -> (currentMoveSpeed / 2.2f).coerceIn(0.85f, 1.35f)
-                isAttacking && currentAnimationName.startsWith("Slash_") -> 1.35f
+                isAttacking && currentAnimationName == "Slash_Inward" -> 1.5f
+                isAttacking && currentAnimationName == "Slash_Outward" -> 1.6f
+                isAttacking && currentAnimationName == "Slash_Downward" -> 1.4f
                 else -> 1.0f
             }
             playerAnimTime += dt * playbackRate
@@ -1006,7 +1008,7 @@ class FilamentGameScene(
             playerAnimator?.let { anim ->
                 anim.applyAnimation(animIdx, timeToApply)
                 if (previousAnimIdx != -1 && crossFadeTimer < crossFadeDuration) {
-                    val alpha = (1.0f - (crossFadeTimer / crossFadeDuration)).coerceIn(0f, 1f)
+                    val alpha = (crossFadeTimer / crossFadeDuration).coerceIn(0f, 1f)
                     val prevDuration = anim.getAnimationDuration(previousAnimIdx).coerceAtLeast(0.01f)
                     val blendPrevTime = previousAnimTime.coerceIn(0f, prevDuration)
                     anim.applyCrossFade(previousAnimIdx, blendPrevTime, alpha)
