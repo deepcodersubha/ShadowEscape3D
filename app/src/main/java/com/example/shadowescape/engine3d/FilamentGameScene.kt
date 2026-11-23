@@ -1086,12 +1086,6 @@ class FilamentGameScene(
             }
         }
 
-        val camPos = FloatArray(3)
-        modelViewer.camera.getPosition(camPos)
-        val camFwd = FloatArray(3)
-        modelViewer.camera.getForwardVector(camFwd)
-        Log.d("FilamentGameScene", "Cam after render: pos=(${camPos[0]}, ${camPos[1]}, ${camPos[2]}) fwd=(${camFwd[0]}, ${camFwd[1]}, ${camFwd[2]})")
-
         // 10. Request next frame
         choreographer.postFrameCallback(this)
     }
