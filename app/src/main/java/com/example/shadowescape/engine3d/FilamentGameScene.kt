@@ -54,12 +54,14 @@ class FilamentGameScene(
     private var playerAsset: FilamentAsset? = null
     private var enemyAsset: FilamentAsset? = null
     private var weaponAsset: FilamentAsset? = null
+    private var shieldAsset: FilamentAsset? = null
+    var isShieldEquipped: Boolean = false
 
     // Modular Animation Controller
     private var playerAnimator: Animator? = null
     private val animationIndices = mutableMapOf<String, Int>()
     private var playerAnimTime: Float = 0f
-    private var currentAnimationName: String = "Idle"
+    private var currentAnimationName: String = "Idle_FoldArms_Loop"
 
     // 3D Player State
     val playerPosition: Vector3 = Vector3(0f, 0f, 0f)
@@ -100,8 +102,8 @@ class FilamentGameScene(
     val rollDuration: Float = 0.85f
     var rollVelocity: Vector3 = Vector3.ZERO
 
-    // Target Dummy / Enemy
-    val enemyPosition: Vector3 = Vector3(0f, 0f, -5.5f)
+    // Target Dummy / Enemy (positioned at north edge of arena for spacious combat arena)
+    val enemyPosition: Vector3 = Vector3(0f, 0f, -8.0f)
     val enemyCapsule: Capsule3D = Capsule3D(enemyPosition, radius = 0.5f, height = 2.0f)
     var enemyHp: Float = 800f
     val enemyMaxHp: Float = 800f
@@ -260,6 +262,54 @@ class FilamentGameScene(
         }
     }
 
+    fun attachShield(assetPath: String?) {
+        shieldAsset?.let {
+            modelViewer.scene.removeEntities(it.entities)
+            modelViewer.scene.removeEntity(it.root)
+            assetLoader.destroyAsset(it)
+            shieldAsset = null
+        }
+        if (assetPath != null) {
+            shieldAsset = loadGlb(assetPath)
+            updateShieldSocket()
+        }
+    }
+
+    fun updateShieldSocket() {
+        val player = playerAsset ?: return
+        val shd = shieldAsset ?: return
+        val tm = modelViewer.engine.transformManager
+
+        val targetBoneName = if (overlay.isWeaponSheathed) "spine_02" else "lowerarm_l"
+        val boneEntity = player.getFirstEntityByName(targetBoneName)
+
+        if (boneEntity != 0) {
+            val boneInst = tm.getInstance(boneEntity)
+            var shdInst = tm.getInstance(shd.root)
+            if (shdInst == 0) {
+                tm.create(shd.root)
+                shdInst = tm.getInstance(shd.root)
+            }
+            if (boneInst != 0 && shdInst != 0) {
+                tm.setParent(shdInst, boneInst)
+                val localMat = FloatArray(16)
+                Matrix.setIdentityM(localMat, 0)
+                if (!overlay.isWeaponSheathed) {
+                    // Forearm Shield Guard Transform (mounted on outer forearm)
+                    Matrix.translateM(localMat, 0, 0.05f, 0.15f, 0.03f)
+                    Matrix.rotateM(localMat, 0, 90f, 0f, 1f, 0f)
+                    Matrix.rotateM(localMat, 0, 180f, 1f, 0f, 0f)
+                } else {
+                    // Back Mount Transform
+                    Matrix.translateM(localMat, 0, 0.05f, 0.10f, -0.16f)
+                    Matrix.rotateM(localMat, 0, 180f, 0f, 1f, 0f)
+                }
+                tm.setTransform(shdInst, localMat)
+                Log.d("FilamentGameScene", "Socketed shield to $targetBoneName (sheathed=${overlay.isWeaponSheathed})")
+            }
+        }
+    }
+
     private fun loadGlb(assetPath: String): FilamentAsset? {
         Log.d("FilamentGameScene", "loadGlb: $assetPath")
         return try {
@@ -309,35 +359,36 @@ class FilamentGameScene(
         if (overlay.isWeaponSheathed) {
             overlay.isWeaponSheathed = false
             updateWeaponSocket()
+            updateShieldSocket()
         }
 
         when (step) {
             1 -> {
-                currentAttackAnimName = "Sword_Regular_A"
-                val animIdx = animationIndices["Sword_Regular_A"] ?: 0
-                currentAttackDuration = playerAnimator?.getAnimationDuration(animIdx) ?: 0.43f
+                currentAttackAnimName = "Sword_Combo_A"
+                val animIdx = animationIndices["Sword_Combo_A"] ?: 0
+                currentAttackDuration = 1.05f
                 stats.useStamina(12f)
                 pendingDamage = equippedWeapon.calculateEffectiveDamage(stats)
                 pendingIsHeavy = false
-                hitWindowTime = 0.18f
+                hitWindowTime = 0.32f
             }
             2 -> {
-                currentAttackAnimName = "Sword_Regular_B"
-                val animIdx = animationIndices["Sword_Regular_B"] ?: 0
-                currentAttackDuration = playerAnimator?.getAnimationDuration(animIdx) ?: 0.53f
+                currentAttackAnimName = "Sword_Combo_B"
+                val animIdx = animationIndices["Sword_Combo_B"] ?: 0
+                currentAttackDuration = 1.05f
                 stats.useStamina(15f)
-                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.3f
+                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.35f
                 pendingIsHeavy = false
-                hitWindowTime = 0.20f
+                hitWindowTime = 0.30f
             }
             3 -> {
-                currentAttackAnimName = "Sword_Regular_C"
-                val animIdx = animationIndices["Sword_Regular_C"] ?: 0
-                currentAttackDuration = playerAnimator?.getAnimationDuration(animIdx) ?: 2.00f
-                stats.useStamina(20f)
-                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.75f
+                currentAttackAnimName = "Sword_Combo_C"
+                val animIdx = animationIndices["Sword_Combo_C"] ?: 0
+                currentAttackDuration = 1.40f
+                stats.useStamina(22f)
+                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.85f
                 pendingIsHeavy = false
-                hitWindowTime = 0.40f
+                hitWindowTime = 0.45f
             }
         }
     }
@@ -354,11 +405,11 @@ class FilamentGameScene(
 
                 if (!isAttacking) {
                     executeComboStrike(1)
-                } else if (attackTimer < 0.18f) {
+                } else if (attackTimer < 0.25f) {
                     comboQueued = true
-                } else if (comboStep == 1) {
+                } else if (comboStep == 1 && attackTimer >= 0.25f) {
                     executeComboStrike(2)
-                } else if (comboStep == 2) {
+                } else if (comboStep == 2 && attackTimer >= 0.25f) {
                     executeComboStrike(3)
                 }
             }
@@ -377,10 +428,11 @@ class FilamentGameScene(
                 if (overlay.isWeaponSheathed) {
                     overlay.isWeaponSheathed = false
                     updateWeaponSocket()
+                    updateShieldSocket()
                 }
                 currentAttackAnimName = "Sword_Heavy_Combo"
                 val animIdx = animationIndices["Sword_Heavy_Combo"] ?: 0
-                currentAttackDuration = playerAnimator?.getAnimationDuration(animIdx) ?: 4.33f
+                currentAttackDuration = 4.60f
                 attackTimer = 0f
                 hasHitRegistered = false
                 stats.useStamina(30f)
@@ -431,8 +483,19 @@ class FilamentGameScene(
         overlay.onSheathToggle = {
             if (!isAttacking && !isRolling) {
                 updateWeaponSocket()
+                updateShieldSocket()
                 overlay.postInvalidate()
             }
+        }
+
+        overlay.onShieldToggle = {
+            isShieldEquipped = overlay.isShieldEquipped
+            if (isShieldEquipped) {
+                attachShield("models/weapon_shield.glb")
+            } else {
+                attachShield(null)
+            }
+            overlay.postInvalidate()
         }
 
         overlay.onArmorToggle = {
@@ -492,6 +555,10 @@ class FilamentGameScene(
             assetLoader.destroyAsset(it)
         }
         weaponAsset?.let {
+            modelViewer.scene.removeEntities(it.entities)
+            assetLoader.destroyAsset(it)
+        }
+        shieldAsset?.let {
             modelViewer.scene.removeEntities(it.entities)
             assetLoader.destroyAsset(it)
         }
@@ -558,8 +625,8 @@ class FilamentGameScene(
             }
 
             // Check if user buffered next combo attack during windup
-            if (comboQueued && attackTimer >= 0.20f) {
-                if (comboStep == 1 && stats.currentStamina >= 16f) {
+            if (comboQueued && attackTimer >= 0.25f) {
+                if (comboStep == 1 && stats.currentStamina >= 15f) {
                     executeComboStrike(2)
                 } else if (comboStep == 2 && stats.currentStamina >= 20f) {
                     executeComboStrike(3)
@@ -568,9 +635,9 @@ class FilamentGameScene(
                 }
             }
 
-            // Natural recovery cancel: after strike connects and blade completes arc (~55% duration),
+            // Natural recovery cancel: after strike connects and blade completes arc (~65% duration),
             // movement joystick smoothly cancels remaining recovery into walking
-            val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.55f).coerceAtLeast(0.40f)
+            val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.65f).coerceAtLeast(0.40f)
             if (canCancelRecovery && stickMagSq > 0.08f) {
                 isAttacking = false
                 comboStep = 0
@@ -582,29 +649,37 @@ class FilamentGameScene(
             }
         }
 
-        // Player directional movement via virtual joystick
-        if (!isRolling && !isAttacking) {
-            if (stickMagSq > 0.03f) {
-                val speed = if (overlay.isSprinting && stats.currentStamina > 5f) {
-                    stats.useStamina(12f * dt)
-                    6.2f
-                } else {
-                    3.8f
+        // Player directional movement via virtual joystick with dynamic walk/run speeds
+        val isMoving = stickMagSq > 0.03f && !isRolling && !isAttacking
+        val stickMag = kotlin.math.sqrt(stickMagSq).coerceIn(0f, 1f)
+        // Natural run: joystick pushed past 60% outer deflection OR holding Sprint button
+        val isRunning = isMoving && (overlay.isSprinting || stickMag > 0.60f) && stats.currentStamina > 3f
+        var currentMoveSpeed = 0f
+
+        if (!isRolling && !isAttacking && isMoving) {
+            currentMoveSpeed = if (isRunning) {
+                if (overlay.isSprinting) {
+                    stats.useStamina(10f * dt)
                 }
-
-                val moveDir = (camera3D.horizontalForward * joyY) + (camera3D.horizontalRight * joyX)
-                moveDir.y = 0f
-                moveDir.normalize()
-
-                playerPosition.add(moveDir.x * speed * dt, 0f, moveDir.z * speed * dt)
-
-                // Smoothly rotate player towards movement direction
-                val targetYaw = Math.toDegrees(atan2(moveDir.x.toDouble(), moveDir.z.toDouble())).toFloat()
-                var yawDiff = (targetYaw - playerYawDeg) % 360f
-                if (yawDiff < -180f) yawDiff += 360f
-                if (yawDiff > 180f) yawDiff -= 360f
-                playerYawDeg += yawDiff * (dt * 14.0f).coerceIn(0f, 1f)
+                // High-velocity combat run: scales from 4.8m/s to 6.8m/s based on stick deflection
+                4.8f + (stickMag - 0.60f).coerceAtLeast(0f) / 0.40f * 2.0f
+            } else {
+                // Tactical walk: scales from 1.8m/s to 3.0m/s
+                1.8f + (stickMag / 0.60f) * 1.2f
             }
+
+            val moveDir = (camera3D.horizontalForward * joyY) + (camera3D.horizontalRight * joyX)
+            moveDir.y = 0f
+            moveDir.normalize()
+
+            playerPosition.add(moveDir.x * currentMoveSpeed * dt, 0f, moveDir.z * currentMoveSpeed * dt)
+
+            // Smoothly rotate player towards movement direction
+            val targetYaw = Math.toDegrees(atan2(moveDir.x.toDouble(), moveDir.z.toDouble())).toFloat()
+            var yawDiff = (targetYaw - playerYawDeg) % 360f
+            if (yawDiff < -180f) yawDiff += 360f
+            if (yawDiff > 180f) yawDiff -= 360f
+            playerYawDeg += yawDiff * (dt * 14.0f).coerceIn(0f, 1f)
         }
 
         // 3. Constrain Player to Arena Perimeter (17.5m radius)
@@ -612,13 +687,31 @@ class FilamentGameScene(
         playerCapsule.clampToArena(17.5f)
 
         // 4. Update Skeletal Animation
-        val isMoving = stickMagSq > 0.03f && !isRolling && !isAttacking
         val targetAnim = when {
             isRolling -> "Slide_Loop"
             isAttacking -> currentAttackAnimName
-            isMoving -> if (overlay.isSprinting && stats.currentStamina > 5f) "Sword_Dash" else "Walk_Carry_Loop"
-            overlay.isWeaponSheathed -> "Idle_FoldArms_Loop"
-            else -> "Idle_Shield_Loop"
+            overlay.isWeaponSheathed -> {
+                when {
+                    isRunning -> "Run_Mixamo_Loop"
+                    isMoving -> "Walk_Mixamo_Loop"
+                    else -> "Idle_FoldArms_Loop"
+                }
+            }
+            isShieldEquipped -> {
+                when {
+                    isRunning -> "Run_Shield"
+                    isMoving -> "Walk_Shield"
+                    else -> "Idle_Shield"
+                }
+            }
+            else -> {
+                // 1-Handed Sword (NO Shield)
+                when {
+                    isRunning -> "Run_Sword"
+                    isMoving -> "Walk_Sword"
+                    else -> "Idle_Sword"
+                }
+            }
         }
 
         if (targetAnim != currentAnimationName) {
@@ -632,7 +725,13 @@ class FilamentGameScene(
             currentAnimationName = targetAnim
             playerAnimTime = 0f
         } else {
-            playerAnimTime += dt
+            // Dynamically scale animation stride rate to velocity so boots plant with zero sliding
+            val playbackRate = when {
+                isRunning -> (currentMoveSpeed / 4.8f).coerceIn(0.9f, 1.4f)
+                isMoving -> (currentMoveSpeed / 2.2f).coerceIn(0.85f, 1.35f)
+                else -> 1.0f
+            }
+            playerAnimTime += dt * playbackRate
         }
 
         val hasAnimations = (playerAnimator?.animationCount ?: 0) > 0
@@ -642,13 +741,18 @@ class FilamentGameScene(
                 ?: 0
 
             val duration = playerAnimator?.getAnimationDuration(animIdx)?.coerceAtLeast(0.01f) ?: 1f
-            val isLoop = currentAnimationName.contains("Loop", ignoreCase = true)
+            // Locomotion and idle animations loop continuously so the player never freezes mid-stride
+            val isLoop = currentAnimationName.contains("Loop", ignoreCase = true) ||
+                         currentAnimationName.contains("Idle", ignoreCase = true) ||
+                         currentAnimationName.contains("Walk", ignoreCase = true) ||
+                         currentAnimationName.contains("Run", ignoreCase = true) ||
+                         isMoving
             val timeToApply = if (isLoop) playerAnimTime % duration else playerAnimTime.coerceAtMost(duration)
 
             playerAnimator?.let { anim ->
                 anim.applyAnimation(animIdx, timeToApply)
                 if (previousAnimIdx != -1 && crossFadeTimer < crossFadeDuration) {
-                    val alpha = (crossFadeTimer / crossFadeDuration).coerceIn(0f, 1f)
+                    val alpha = (1.0f - (crossFadeTimer / crossFadeDuration)).coerceIn(0f, 1f)
                     val prevDuration = anim.getAnimationDuration(previousAnimIdx).coerceAtLeast(0.01f)
                     val blendPrevTime = previousAnimTime.coerceIn(0f, prevDuration)
                     anim.applyCrossFade(previousAnimIdx, blendPrevTime, alpha)

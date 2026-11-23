@@ -34,6 +34,8 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
     var onSheathToggle: (() -> Unit)? = null
     var onArmorToggle: (() -> Unit)? = null
     var onWeaponToggle: (() -> Unit)? = null
+    var onShieldToggle: (() -> Unit)? = null
+    var isShieldEquipped: Boolean = false
     var currentArmorName: String = "RANGER"
     var currentWeaponName: String = "SWORD"
 
@@ -79,8 +81,10 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
     private val sheathBtnRect = RectF()
     private val armorBtnRect = RectF()
     private val swapWpnBtnRect = RectF()
+    private val shieldBtnRect = RectF()
 
     private var rollTouchStartTime: Long = 0L
+    private var rollPointerId: Int = -1
 
     // Dedicated Paints to avoid state leakage
     private val hudPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -153,6 +157,11 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         val wpnX = armorX - healRadius * 2f - 16f * density
         val wpnY = healY
         swapWpnBtnRect.set(wpnX - healRadius, wpnY - healRadius, wpnX + healRadius, wpnY + healRadius)
+
+        // Shield Toggle Button: To the left of Weapon Swap
+        val shieldX = wpnX - healRadius * 2f - 16f * density
+        val shieldY = healY
+        shieldBtnRect.set(shieldX - healRadius, shieldY - healRadius, shieldX + healRadius, shieldY + healRadius)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -204,8 +213,18 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
                     invalidate()
                     return true
                 }
+                if (shieldBtnRect.contains(x, y)) {
+                    isShieldEquipped = !isShieldEquipped
+                    onShieldToggle?.invoke()
+                    invalidate()
+                    return true
+                }
                 if (rollBtnRect.contains(x, y)) {
                     rollTouchStartTime = System.currentTimeMillis()
+                    rollPointerId = pointerId
+                    isSprinting = true
+                    onSprintToggle?.invoke(true)
+                    invalidate()
                     return true
                 }
 
@@ -283,14 +302,12 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
                     cameraPointerId = -1
                 }
 
-                if (rollBtnRect.contains(x, y)) {
+                if (pointerId == rollPointerId || rollBtnRect.contains(x, y)) {
                     val duration = System.currentTimeMillis() - rollTouchStartTime
-                    if (duration > 350) {
-                        // Long press = Sprint toggle
-                        isSprinting = !isSprinting
-                        onSprintToggle?.invoke(isSprinting)
-                    } else {
-                        // Quick tap = Dodge Roll
+                    isSprinting = false
+                    onSprintToggle?.invoke(false)
+                    rollPointerId = -1
+                    if (duration <= 280) {
                         onDodgeRoll?.invoke()
                     }
                     invalidate()
@@ -331,6 +348,7 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         drawActionButton(canvas, healBtnRect, "🧪", "FLASK", "#99065F46", "#34D399")
         drawActionButton(canvas, armorBtnRect, "🛡️", currentArmorName, "#99475569", "#94A3B8")
         drawActionButton(canvas, swapWpnBtnRect, "🗡️", currentWeaponName, "#991E3A8A", "#60A5FA")
+        drawActionButton(canvas, shieldBtnRect, if (isShieldEquipped) "🛡️" else "✋", if (isShieldEquipped) "SHIELD" else "1-HAND", if (isShieldEquipped) "#991E3A8A" else "#99334155", if (isShieldEquipped) "#60A5FA" else "#94A3B8")
 
         // 3. Draw Top-Left Soulslike HUD: HP & Stamina Bars
         drawSoulslikeHUD(canvas)
