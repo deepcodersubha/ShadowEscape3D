@@ -20,10 +20,12 @@ import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.Manipulator
 import com.google.android.filament.utils.ModelViewer
+import com.example.shadowescape.audio.SoundManager
 import com.example.shadowescape.model.PlayerStats
 import com.example.shadowescape.model.Weapon
 import com.example.shadowescape.model.Weapons
 import com.example.shadowescape.model.WeaponType
+import com.example.shadowescape.physics3d.ArrowProjectile3D
 import com.example.shadowescape.physics3d.Capsule3D
 import com.example.shadowescape.physics3d.Vector3
 import com.example.shadowescape.ui3d.DualZoneTouchOverlay
@@ -75,6 +77,7 @@ class FilamentGameScene(
 
     // Combat & RPG Stats
     val stats: PlayerStats = PlayerStats()
+    private val soundManager = SoundManager(context)
     var equippedWeapon: Weapon = Weapons.SUN_BOW
     var isAttacking: Boolean = false
     var attackTimer: Float = 0f
@@ -86,6 +89,8 @@ class FilamentGameScene(
     private var pendingIsHeavy: Boolean = false
     private var hitWindowTime: Float = 0.20f
     private var hasHitRegistered: Boolean = false
+    private var hasFiredArrowThisAttack: Boolean = false
+    private val activeArrows = mutableListOf<ArrowProjectile3D>()
 
     // Modular Armor & Weapon Equipment Systems
     var equipmentManager: ModularEquipmentManager? = null
@@ -374,6 +379,7 @@ class FilamentGameScene(
         isAttacking = true
         attackTimer = 0f
         hasHitRegistered = false
+        hasFiredArrowThisAttack = false
         if (overlay.isWeaponSheathed) {
             overlay.isWeaponSheathed = false
             updateWeaponSocket()
@@ -406,6 +412,45 @@ class FilamentGameScene(
                 hitWindowTime = 0.15f
             }
         }
+    }
+
+    private fun spawnArrow() {
+        val arrowAsset = loadGlb("models/weapon_arrow.glb") ?: return
+
+        // 1. Arrow spawn point: chest / bow grip height
+        val rad = Math.toRadians(playerYawDeg.toDouble())
+        val fwdX = kotlin.math.sin(rad).toFloat()
+        val fwdZ = kotlin.math.cos(rad).toFloat()
+
+        val spawnPos = Vector3(
+            playerPosition.x + fwdX * 0.35f,
+            playerPosition.y + 1.25f,
+            playerPosition.z + fwdZ * 0.35f
+        )
+
+        // 2. Flight Direction: Aim at locked target or straight ahead with slight loft
+        val flightDir = if (camera3D.isLockedOn && camera3D.lockTarget != null) {
+            val target = Vector3(enemyPosition.x, enemyPosition.y + 1.15f, enemyPosition.z)
+            (target - spawnPos).normalized()
+        } else {
+            Vector3(fwdX, 0.035f, fwdZ).normalized()
+        }
+
+        val arrowSpeed = 38.0f // 38 m/s
+        val velocity = flightDir * arrowSpeed
+        val dmg = pendingDamage
+
+        activeArrows.add(ArrowProjectile3D(
+            asset = arrowAsset,
+            position = spawnPos,
+            velocity = velocity,
+            damage = dmg,
+            gravity = 5.2f,
+            lifetime = 3.5f
+        ))
+
+        soundManager.playSlash(1.35f) // Bow twang / whoosh
+        Log.i("FilamentGameScene", ">>> ARROW FIRED! Pos=(${spawnPos.x}, ${spawnPos.y}, ${spawnPos.z}), Vel=(${velocity.x}, ${velocity.y}, ${velocity.z})")
     }
 
     private fun wireOverlayCallbacks() {
@@ -609,6 +654,13 @@ class FilamentGameScene(
 
     fun destroy() {
         stop()
+        for (arrow in activeArrows) {
+            modelViewer.scene.removeEntities(arrow.asset.entities)
+            modelViewer.scene.removeEntity(arrow.asset.root)
+            assetLoader.destroyAsset(arrow.asset)
+        }
+        activeArrows.clear()
+
         arenaAsset?.let {
             modelViewer.scene.removeEntities(it.entities)
             assetLoader.destroyAsset(it)
@@ -687,10 +739,18 @@ class FilamentGameScene(
         } else if (isAttacking) {
             attackTimer += dt
 
-            // Synchronized hit registration at swing impact
-            if (!hasHitRegistered && attackTimer >= hitWindowTime) {
-                hasHitRegistered = true
-                checkHit(pendingDamage, pendingIsHeavy)
+            // Synchronized arrow spawn at bowstring release
+            if (currentAttackAnimName == "Shoot_Recoil") {
+                if (!hasFiredArrowThisAttack && attackTimer >= 0.12f) {
+                    hasFiredArrowThisAttack = true
+                    spawnArrow()
+                }
+            } else {
+                // Synchronized melee hit registration
+                if (!hasHitRegistered && attackTimer >= hitWindowTime) {
+                    hasHitRegistered = true
+                    checkHit(pendingDamage, pendingIsHeavy)
+                }
             }
 
             // Check if user buffered next combo attack during windup
@@ -704,17 +764,23 @@ class FilamentGameScene(
                 }
             }
 
-            // Natural recovery cancel: after strike connects and blade completes arc (~65% duration),
-            // movement joystick smoothly cancels remaining recovery into walking
-            val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.65f).coerceAtLeast(0.40f)
-            if (canCancelRecovery && stickMagSq > 0.08f) {
-                isAttacking = false
-                comboStep = 0
-                comboQueued = false
-            } else if (attackTimer >= currentAttackDuration) {
-                isAttacking = false
-                comboStep = 0
-                comboQueued = false
+            // Archery combo flow: if player drew arrow (step 1) and didn't hold, smoothly release into shoot (step 3)
+            val isArchery = equippedWeapon.type == WeaponType.BOW
+            if (isArchery && comboStep == 1 && !comboQueued && attackTimer >= currentAttackDuration) {
+                executeComboStrike(3)
+            } else if (isArchery && comboStep == 2 && !comboQueued && attackTimer >= currentAttackDuration) {
+                executeComboStrike(3)
+            } else {
+                val canCancelRecovery = attackTimer >= (currentAttackDuration * 0.65f).coerceAtLeast(0.40f)
+                if (canCancelRecovery && stickMagSq > 0.08f) {
+                    isAttacking = false
+                    comboStep = 0
+                    comboQueued = false
+                } else if (attackTimer >= currentAttackDuration) {
+                    isAttacking = false
+                    comboStep = 0
+                    comboQueued = false
+                }
             }
         }
 
@@ -754,6 +820,54 @@ class FilamentGameScene(
         // 3. Constrain Player to Arena Perimeter (17.5m radius)
         playerCapsule.baseCenter = playerPosition
         playerCapsule.clampToArena(17.5f)
+
+        // 3b. Update Active 3D Arrow Projectiles
+        val tm = modelViewer.engine.transformManager
+        val arrowIter = activeArrows.iterator()
+        while (arrowIter.hasNext()) {
+            val arrow = arrowIter.next()
+            arrow.update(dt)
+
+            var inst = tm.getInstance(arrow.asset.root)
+            if (inst == 0) {
+                tm.create(arrow.asset.root)
+                inst = tm.getInstance(arrow.asset.root)
+            }
+            if (inst != 0) {
+                val arrowMat = FloatArray(16)
+                Matrix.setIdentityM(arrowMat, 0)
+                Matrix.translateM(arrowMat, 0, arrow.position.x, arrow.position.y, arrow.position.z)
+
+                // Orient arrow along velocity vector
+                val yaw = Math.toDegrees(atan2(arrow.velocity.x.toDouble(), arrow.velocity.z.toDouble())).toFloat()
+                val horizSpeed = kotlin.math.sqrt(arrow.velocity.x * arrow.velocity.x + arrow.velocity.z * arrow.velocity.z)
+                val pitch = Math.toDegrees(atan2(arrow.velocity.y.toDouble(), horizSpeed.toDouble())).toFloat()
+
+                Matrix.rotateM(arrowMat, 0, yaw, 0f, 1f, 0f)
+                Matrix.rotateM(arrowMat, 0, -pitch, 1f, 0f, 0f)
+                tm.setTransform(inst, arrowMat)
+            }
+
+            // Hit detection against Enemy
+            val enemyCenter = Vector3(enemyPosition.x, enemyPosition.y + 1.1f, enemyPosition.z)
+            val distToEnemy = arrow.position.distanceTo(enemyCenter)
+            if (!arrow.hasHitTarget && distToEnemy <= 1.15f) {
+                arrow.hasHitTarget = true
+                arrow.isDead = true
+                enemyHp = (enemyHp - arrow.damage).coerceAtLeast(0f)
+                soundManager.playEnemyHit()
+                Log.i("FilamentGameScene", ">>> ARROW HIT ENEMY! Damage: ${arrow.damage}, remaining enemyHp: $enemyHp")
+            }
+
+            // Cleanup dead arrows
+            if (arrow.isDead) {
+                modelViewer.scene.removeEntities(arrow.asset.entities)
+                modelViewer.scene.removeEntity(arrow.asset.root)
+                assetLoader.destroyAsset(arrow.asset)
+                arrowIter.remove()
+                Log.d("FilamentGameScene", "Arrow removed from scene.")
+            }
+        }
 
         // 4. Update Skeletal Animation
         val targetAnim = when {

@@ -29,6 +29,13 @@ class MainActivity : AppCompatActivity() {
                 touchOverlay.lastActiveJoystickY = y
                 touchOverlay.lastActiveJoystickTime = System.currentTimeMillis()
                 touchOverlay.onDodgeRoll?.invoke()
+            } else if (intent?.action == "com.example.shadowescape.ATTACK") {
+                val type = intent.getStringExtra("type") ?: "light"
+                if (type == "heavy") {
+                    touchOverlay.onHeavyAttack?.invoke()
+                } else {
+                    touchOverlay.onLightAttack?.invoke()
+                }
             }
         }
     }
@@ -76,7 +83,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
         gameScene = FilamentGameScene(this, surfaceView, touchOverlay)
 
-        val filter = android.content.IntentFilter("com.example.shadowescape.DODGE")
+        val filter = android.content.IntentFilter("com.example.shadowescape.DODGE").apply {
+            addAction("com.example.shadowescape.ATTACK")
+        }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(debugReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
         } else {
