@@ -23,6 +23,7 @@ import com.google.android.filament.utils.ModelViewer
 import com.example.shadowescape.model.PlayerStats
 import com.example.shadowescape.model.Weapon
 import com.example.shadowescape.model.Weapons
+import com.example.shadowescape.model.WeaponType
 import com.example.shadowescape.physics3d.Capsule3D
 import com.example.shadowescape.physics3d.Vector3
 import com.example.shadowescape.ui3d.DualZoneTouchOverlay
@@ -61,7 +62,7 @@ class FilamentGameScene(
     private var playerAnimator: Animator? = null
     private val animationIndices = mutableMapOf<String, Int>()
     private var playerAnimTime: Float = 0f
-    private var currentAnimationName: String = "Idle_FoldArms_Loop"
+    private var currentAnimationName: String = "Idle_Bow"
 
     // 3D Player State
     val playerPosition: Vector3 = Vector3(0f, 0f, 0f)
@@ -74,11 +75,11 @@ class FilamentGameScene(
 
     // Combat & RPG Stats
     val stats: PlayerStats = PlayerStats()
-    var equippedWeapon: Weapon = Weapons.STEEL_BROADSWORD
+    var equippedWeapon: Weapon = Weapons.SUN_BOW
     var isAttacking: Boolean = false
     var attackTimer: Float = 0f
     var currentAttackDuration: Float = 1.0f
-    var currentAttackAnimName: String = "Sword_Regular_A"
+    var currentAttackAnimName: String = "Draw_Arrow"
     var comboStep: Int = 0
     var comboQueued: Boolean = false
     private var pendingDamage: Float = 0f
@@ -89,7 +90,7 @@ class FilamentGameScene(
     // Modular Armor & Weapon Equipment Systems
     var equipmentManager: ModularEquipmentManager? = null
         private set
-    private var currentWeaponType: Int = 0 // 0 = Broadsword, 1 = Katana
+    private var currentWeaponType: Int = 0 // 0 = Longbow, 1 = Broadsword, 2 = Katana
 
     // Animation Cross-Fading & State Blending
     private var previousAnimIdx: Int = -1
@@ -126,6 +127,9 @@ class FilamentGameScene(
         Log.d("FilamentGameScene", "Manipulator methods: " + Manipulator::class.java.methods.map { "${it.name}(${it.parameterTypes.map { p -> p.simpleName }.joinToString()})" }.joinToString("; "))
         overlay.camera = camera3D
         overlay.equippedWeapon = equippedWeapon
+        overlay.currentWeaponName = "LONGBOW"
+        overlay.isWeaponSheathed = false
+        overlay.isShieldEquipped = false
 
         setupLighting()
         setupSkybox()
@@ -188,6 +192,24 @@ class FilamentGameScene(
         Log.d("FilamentGameScene", "Loading Quaternius nature sanctuary meadow arena...")
         arenaAsset = loadGlb("models/arena_nature_meadow.glb")
         Log.d("FilamentGameScene", "Loaded nature arena: $arenaAsset")
+
+        Log.d("FilamentGameScene", "Loading Elf Male with Pro Longbow Pack...")
+        playerAsset = loadGlb("models/player_elf_male.glb")
+        Log.d("FilamentGameScene", "Loaded elf player: $playerAsset")
+
+        playerAnimator = playerAsset?.instance?.animator
+        Log.d("FilamentGameScene", "Player animator: $playerAnimator")
+        playerAnimator?.let { anim ->
+            Log.d("FilamentGameScene", "Animation count: ${anim.animationCount}")
+            for (i in 0 until anim.animationCount) {
+                val name = anim.getAnimationName(i)
+                animationIndices[name] = i
+                Log.d("FilamentGameScene", "Anim [$i]: $name")
+            }
+        }
+
+        // Attach Longbow weapon
+        attachWeapon("models/weapon_longbow.glb")
     }
 
     fun attachWeapon(assetPath: String) {
@@ -207,7 +229,19 @@ class FilamentGameScene(
         val wpn = weaponAsset ?: return
         val tm = modelViewer.engine.transformManager
 
-        val targetBoneName = if (overlay.isWeaponSheathed) "spine_03" else "hand_r"
+        val isBow = equippedWeapon.type == WeaponType.BOW
+        val targetBoneName = if (overlay.isWeaponSheathed) {
+            if (player.getFirstEntityByName("mixamorig:Spine2") != 0) "mixamorig:Spine2" else "spine_03"
+        } else {
+            if (isBow) {
+                if (player.getFirstEntityByName("mixamorig:LeftHand") != 0) "mixamorig:LeftHand"
+                else if (player.getFirstEntityByName("mixamorig:RightHand") != 0) "mixamorig:RightHand"
+                else "hand_l"
+            } else {
+                if (player.getFirstEntityByName("mixamorig:RightHand") != 0) "mixamorig:RightHand"
+                else "hand_r"
+            }
+        }
         val boneEntity = player.getFirstEntityByName(targetBoneName)
 
         if (boneEntity != 0) {
@@ -222,10 +256,17 @@ class FilamentGameScene(
                 val localMat = FloatArray(16)
                 Matrix.setIdentityM(localMat, 0)
                 if (!overlay.isWeaponSheathed) {
-                    // Hand Grip Transform
-                    Matrix.translateM(localMat, 0, 0f, 0.04f, 0f)
-                    Matrix.rotateM(localMat, 0, -90f, 1f, 0f, 0f)
-                    Matrix.rotateM(localMat, 0, 180f, 0f, 1f, 0f)
+                    if (isBow) {
+                        // Longbow held in LeftHand: orient vertical with arrow rest pointing forward
+                        Matrix.translateM(localMat, 0, 0.02f, 0.04f, -0.02f)
+                        Matrix.rotateM(localMat, 0, 90f, 0f, 0f, 1f)
+                        Matrix.rotateM(localMat, 0, 90f, 0f, 1f, 0f)
+                    } else {
+                        // Hand Grip Transform for sword
+                        Matrix.translateM(localMat, 0, 0f, 0.04f, 0f)
+                        Matrix.rotateM(localMat, 0, -90f, 1f, 0f, 0f)
+                        Matrix.rotateM(localMat, 0, 180f, 0f, 1f, 0f)
+                    }
                 } else {
                     // Back Sheath Mount Transform (diagonally across back spine)
                     Matrix.translateM(localMat, 0, -0.05f, 0.12f, -0.16f)
@@ -340,31 +381,28 @@ class FilamentGameScene(
 
         when (step) {
             1 -> {
-                currentAttackAnimName = "Sword_Combo_A"
-                val animIdx = animationIndices["Sword_Combo_A"] ?: 0
-                currentAttackDuration = 1.05f
-                stats.useStamina(12f)
+                currentAttackAnimName = "Draw_Arrow"
+                currentAttackDuration = 0.80f
+                stats.useStamina(10f)
                 pendingDamage = equippedWeapon.calculateEffectiveDamage(stats)
                 pendingIsHeavy = false
-                hitWindowTime = 0.32f
+                hitWindowTime = 0.40f
             }
             2 -> {
-                currentAttackAnimName = "Sword_Combo_B"
-                val animIdx = animationIndices["Sword_Combo_B"] ?: 0
-                currentAttackDuration = 1.05f
-                stats.useStamina(15f)
-                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.35f
+                currentAttackAnimName = "Aim_Hold"
+                currentAttackDuration = 0.70f
+                stats.useStamina(12f)
+                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.30f
                 pendingIsHeavy = false
-                hitWindowTime = 0.30f
+                hitWindowTime = 0.35f
             }
             3 -> {
-                currentAttackAnimName = "Sword_Combo_C"
-                val animIdx = animationIndices["Sword_Combo_C"] ?: 0
-                currentAttackDuration = 1.40f
-                stats.useStamina(22f)
+                currentAttackAnimName = "Shoot_Recoil"
+                currentAttackDuration = 0.60f
+                stats.useStamina(16f)
                 pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 1.85f
                 pendingIsHeavy = false
-                hitWindowTime = 0.45f
+                hitWindowTime = 0.15f
             }
         }
     }
@@ -406,16 +444,15 @@ class FilamentGameScene(
                     updateWeaponSocket()
                     updateShieldSocket()
                 }
-                currentAttackAnimName = "Sword_Heavy_Combo"
-                val animIdx = animationIndices["Sword_Heavy_Combo"] ?: 0
-                currentAttackDuration = 4.60f
+                currentAttackAnimName = "Melee_Kick"
+                currentAttackDuration = 1.15f
                 attackTimer = 0f
                 hasHitRegistered = false
-                stats.useStamina(30f)
+                stats.useStamina(25f)
 
-                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 2.4f
+                pendingDamage = equippedWeapon.calculateEffectiveDamage(stats) * 2.2f
                 pendingIsHeavy = true
-                hitWindowTime = 0.50f
+                hitWindowTime = 0.45f
             }
         }
 
@@ -481,17 +518,26 @@ class FilamentGameScene(
         }
 
         overlay.onWeaponToggle = {
-            currentWeaponType = (currentWeaponType + 1) % 2
-            if (currentWeaponType == 0) {
-                equippedWeapon = Weapons.STEEL_BROADSWORD
-                overlay.equippedWeapon = equippedWeapon
-                overlay.currentWeaponName = "SWORD"
-                attachWeapon("models/weapon_broadsword.glb")
-            } else {
-                equippedWeapon = Weapons.SHADOW_KATANA
-                overlay.equippedWeapon = equippedWeapon
-                overlay.currentWeaponName = "KATANA"
-                attachWeapon("models/weapon_katana.glb")
+            currentWeaponType = (currentWeaponType + 1) % 3
+            when (currentWeaponType) {
+                0 -> {
+                    equippedWeapon = Weapons.SUN_BOW
+                    overlay.equippedWeapon = equippedWeapon
+                    overlay.currentWeaponName = "LONGBOW"
+                    attachWeapon("models/weapon_longbow.glb")
+                }
+                1 -> {
+                    equippedWeapon = Weapons.STEEL_BROADSWORD
+                    overlay.equippedWeapon = equippedWeapon
+                    overlay.currentWeaponName = "SWORD"
+                    attachWeapon("models/weapon_broadsword.glb")
+                }
+                else -> {
+                    equippedWeapon = Weapons.SHADOW_KATANA
+                    overlay.equippedWeapon = equippedWeapon
+                    overlay.currentWeaponName = "KATANA"
+                    attachWeapon("models/weapon_katana.glb")
+                }
             }
             overlay.postInvalidate()
         }
@@ -664,28 +710,20 @@ class FilamentGameScene(
 
         // 4. Update Skeletal Animation
         val targetAnim = when {
-            isRolling -> "Slide_Loop"
+            isRolling -> "Roll"
             isAttacking -> currentAttackAnimName
             overlay.isWeaponSheathed -> {
                 when {
-                    isRunning -> "Run_Mixamo_Loop"
-                    isMoving -> "Walk_Mixamo_Loop"
-                    else -> "Idle_FoldArms_Loop"
-                }
-            }
-            isShieldEquipped -> {
-                when {
-                    isRunning -> "Run_Shield"
-                    isMoving -> "Walk_Shield"
-                    else -> "Idle_Shield"
+                    isRunning -> "Run_Bow"
+                    isMoving -> "Walk_Bow"
+                    else -> "Idle_Unarmed"
                 }
             }
             else -> {
-                // 1-Handed Sword (NO Shield)
                 when {
-                    isRunning -> "Run_Sword"
-                    isMoving -> "Walk_Sword"
-                    else -> "Idle_Sword"
+                    isRunning -> "Run_Bow"
+                    isMoving -> "Walk_Bow"
+                    else -> "Idle_Bow"
                 }
             }
         }
