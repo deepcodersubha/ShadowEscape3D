@@ -95,7 +95,7 @@ class FilamentGameScene(
     // Modular Armor & Weapon Equipment Systems
     var equipmentManager: ModularEquipmentManager? = null
         private set
-    private var currentWeaponType: Int = 1 // 0 = Longbow, 1 = Broadsword, 2 = Katana
+    private var currentWeaponType: Int = 1 // 0 = Longbow, 1 = Broadsword, 2 = Axe
 
     // Animation Cross-Fading & State Blending
     private var previousAnimIdx: Int = -1
@@ -685,10 +685,10 @@ class FilamentGameScene(
                     attachWeapon("models/weapon_broadsword.glb")
                 }
                 else -> {
-                    equippedWeapon = Weapons.SHADOW_KATANA
+                    equippedWeapon = Weapons.IRON_BATTLE_AXE
                     overlay.equippedWeapon = equippedWeapon
-                    overlay.currentWeaponName = "KATANA"
-                    attachWeapon("models/weapon_katana.glb")
+                    overlay.currentWeaponName = "AXE"
+                    attachWeapon("models/weapon_axe.glb")
                 }
             }
             overlay.postInvalidate()

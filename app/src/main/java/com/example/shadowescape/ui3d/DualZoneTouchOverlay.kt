@@ -353,7 +353,12 @@ class DualZoneTouchOverlay(context: Context) : View(context) {
         drawActionButton(canvas, lockBtnRect, "🎯", "LOCK", if (isTargetLocked) "#99B91C1C" else "#991E293B", if (isTargetLocked) "#EF4444" else "#64748B")
         drawActionButton(canvas, healBtnRect, "🧪", "FLASK", "#99065F46", "#34D399")
         drawActionButton(canvas, armorBtnRect, "🛡️", currentArmorName, "#99475569", "#94A3B8")
-        drawActionButton(canvas, swapWpnBtnRect, "🗡️", currentWeaponName, "#991E3A8A", "#60A5FA")
+        val wpnIcon = when (currentWeaponName) {
+            "LONGBOW" -> "🏹"
+            "AXE" -> "🪓"
+            else -> "🗡️"
+        }
+        drawActionButton(canvas, swapWpnBtnRect, wpnIcon, currentWeaponName, "#991E3A8A", "#60A5FA")
         drawActionButton(canvas, shieldBtnRect, if (isShieldEquipped) "🛡️" else "✋", if (isShieldEquipped) "SHIELD" else "1-HAND", if (isShieldEquipped) "#991E3A8A" else "#99334155", if (isShieldEquipped) "#60A5FA" else "#94A3B8")
 
         // 3. Draw Top-Left Soulslike HUD: HP & Stamina Bars
